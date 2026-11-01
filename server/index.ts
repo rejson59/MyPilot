@@ -26,6 +26,25 @@ app.get('/api/snapshot', (_req, res) => {
   res.json(room.snapshot());
 });
 
+app.post('/api/devices', (req, res) => {
+  try {
+    const device = room.createDevice(req.body ?? {});
+    res.status(201).json({ ok: true, device });
+  } catch (error) {
+    res.status(400).json({ ok: false, error: (error as Error).message });
+  }
+});
+
+app.patch('/api/devices/:id/info', (req, res) => {
+  const result = room.updateDeviceInfo(req.params.id, req.body ?? {});
+  res.status(result.ok ? 200 : 400).json(result);
+});
+
+app.delete('/api/devices/:id', (req, res) => {
+  const result = room.deleteDevice(req.params.id);
+  res.status(result.ok ? 200 : 400).json(result);
+});
+
 app.patch('/api/devices/:id', (req, res) => {
   const { changed } = room.applyPatch(req.params.id, req.body ?? {});
   if (!changed.length) {

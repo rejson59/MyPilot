@@ -7,6 +7,7 @@ import {
   Flame,
   Leaf,
   Music2,
+  Plus,
   Search,
   Snowflake,
   Sun,
@@ -41,6 +42,7 @@ export function Dashboard() {
   const locale = useApp((state) => state.locale);
   const toast = useApp((state) => state.toast);
   const setView = useApp((state) => state.setView);
+  const setAddOpen = useApp((state) => state.setAddOpen);
 
   const [zone, setZone] = useState<'all' | ZoneId>('all');
   const [query, setQuery] = useState('');
@@ -180,6 +182,19 @@ export function Dashboard() {
               {filtered.map((device, index) => (
                 <DeviceTile key={device.id} device={device} index={index} />
               ))}
+              {!query && zone === 'all' && (
+                <button type="button" className="tile tile--add" onClick={() => setAddOpen(true)}>
+                  <span className="tile__head">
+                    <span className="tile__icon">
+                      <Plus size={19} strokeWidth={2} />
+                    </span>
+                  </span>
+                  <span className="tile__body">
+                    <span className="tile__name">{t('devices.add')}</span>
+                    <span className="tile__status">{t('add.subtitle')}</span>
+                  </span>
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -323,6 +338,7 @@ function EnergyCard() {
   const snapshot = useApp((state) => state.snapshot)!;
   const t = useT();
   const setView = useApp((state) => state.setView);
+  const setAddOpen = useApp((state) => state.setAddOpen);
   const energy = snapshot.energy;
   const cost = (energy.todayKwh * energy.pricePerKwh).toFixed(2);
   const top = energy.breakdown.filter((item) => item.w > 1).slice(0, 3);

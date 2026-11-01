@@ -48,6 +48,17 @@ export interface DeviceState {
   [key: string]: unknown;
 }
 
+export interface IrButton {
+  id: string;
+  label: string;
+  /** Kod w formacie mostka, np. 0x00FF906F. Puste = przycisk tylko w trybie demo. */
+  code?: string;
+  protocol?: string;
+  bits?: number;
+  action?: 'toggle' | 'on' | 'off' | 'bright+' | 'bright-' | 'color' | 'effect' | 'none';
+  value?: string | number;
+}
+
 export interface Device {
   id: string;
   name: LocalizedText;
@@ -65,6 +76,8 @@ export interface Device {
     mac?: string;
     ip?: string;
     apps?: string[];
+    buttons?: IrButton[];
+    custom?: boolean;
     [key: string]: unknown;
   };
 }

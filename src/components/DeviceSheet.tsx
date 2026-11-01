@@ -4,6 +4,8 @@ import {
   BellRing,
   Bluetooth,
   Check,
+  Radio,
+  Trash2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -25,7 +27,7 @@ import {
   Wifi,
   Zap,
 } from 'lucide-react';
-import type { BluetoothPeer, Device } from '../../shared/types';
+import type { BluetoothPeer, Device, IrButton } from '../../shared/types';
 import { api } from '../lib/api';
 import { formatDuration, kindAccent } from '../lib/format';
 import { getDeviceIcon } from '../lib/icons';
@@ -66,6 +68,8 @@ function DeviceBody({ device }: { device: Device }) {
     api.command(device.id, name, payload).catch(fail);
 
   const showPower = !['blind', 'phone', 'tablet'].includes(device.kind);
+  const buttons = (device.meta?.buttons as IrButton[] | undefined) ?? [];
+  const isCustom = Boolean(device.meta?.custom);
 
   return (
     <>
@@ -79,6 +83,12 @@ function DeviceBody({ device }: { device: Device }) {
             <span>{t(`kind.${device.kind}`)}</span>
             <span className="dotSep" />
             <span>{t(`transport.${device.transport}`)}</span>
+            {device.meta?.custom && (
+              <>
+                <span className="dotSep" />
+                <span>{t('sheet.customDevice')}</span>
+              </>
+            )}
             {!device.online && (
               <>
                 <span className="dotSep" />
@@ -126,6 +136,9 @@ function DeviceBody({ device }: { device: Device }) {
         {device.kind === 'plug' && <PlugControls device={device} />}
         {device.kind === 'blind' && <BlindControls device={device} />}
 
+        {buttons.length > 0 && <IrPad device={device} buttons={buttons} />}
+        {buttons.length > 0 && <IrCodeEditor key={device.id} device={device} buttons={buttons} />}
+
         <div className="block">
           <div className="block__head">
             <span className="block__label">{t('sheet.info')}</span>
@@ -158,6 +171,23 @@ function DeviceBody({ device }: { device: Device }) {
             </div>
           </div>
         </div>
+
+        {isCustom && (
+          <div className="block">
+            <button type="button" className="btn btn--danger btn--sm btn--block" onClick={async () => {
+              if (!window.confirm(t('sheet.deleteConfirm'))) return;
+              try {
+                await api.deleteDevice(device.id);
+                close();
+                toast(t('sheet.deleteDevice'), 'info');
+              } catch (error) {
+                toast((error as Error).message, 'error');
+              }
+            }}>
+              <Trash2 size={13} /> {t('sheet.deleteDevice')}
+            </button>
+          </div>
+        )}
       </div>
     </>
   );
@@ -835,3 +865,115 @@ function BlindControls({ device }: { device: Device }) {
   );
 }
 
+/* -------------------------------------------------------------- pilot IR */
+
+function IrPad({ device, buttons }: { device: Device; buttons: IrButton[] }) {
+  const t = useT();
+  const toast = useApp((state) => state.toast);
+  const [busy, setBusy] = useState<string | null>(null);
+  const state = device.state as Record<string, any>;
+
+  const send = async (button: IrButton) => {
+    setBusy(button.id);
+    try {
+      await api.command(device.id, 'ir-button', { buttonId: button.id });
+    } catch (error) {
+      toast((error as Error).message, 'error');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="block">
+      <div className="block__head">
+        <span className="block__label">{t('sheet.remote')}</span>
+        <span className="chipMini">
+          <Radio size={11} /> IR
+        </span>
+      </div>
+      <div className="irPad">
+        {buttons.map((button) => {
+          const active =
+            button.action === 'color' &&
+            String(state.color ?? '').toLowerCase() === String(button.value ?? '').toLowerCase();
+          return (
+            <button
+              key={button.id}
+              type="button"
+              className="irKey"
+              data-active={active}
+              disabled={busy === button.id}
+              style={button.action === 'color' ? ({ '--sw': String(button.value) } as React.CSSProperties) : undefined}
+              onClick={() => send(button)}
+            >
+              {button.action === 'color' && <span className="irKey__dot" />}
+              <span>{button.label}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="note">{t('sheet.irDemoNote')}</div>
+    </div>
+  );
+}
+
+/* --------------------------------------------------------- edytor kodów IR */
+
+function IrCodeEditor({ device, buttons }: { device: Device; buttons: IrButton[] }) {
+  const t = useT();
+  const toast = useApp((state) => state.toast);
+  const [codes, setCodes] = useState<Record<string, string>>(
+    Object.fromEntries(buttons.map((button) => [button.id, button.code ?? ''])),
+  );
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const updated = buttons.map((button) => {
+        const code = (codes[button.id] ?? '').trim();
+        return { ...button, code: code || undefined };
+      });
+      await api.updateDeviceInfo(device.id, { meta: { buttons: updated } });
+      toast(t('common.saved'), 'success');
+    } catch (error) {
+      toast((error as Error).message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <details className="codesBox">
+      <summary>
+        <span>{t('sheet.irCodes')}</span>
+        <span className="chipMini">
+          {buttons.filter((button) => button.code).length}/{buttons.length}
+        </span>
+      </summary>
+      <p className="note" style={{ marginTop: 10 }}>
+        {t('sheet.irCodesNote')}
+      </p>
+      <div className="codesList">
+        {buttons.map((button) => (
+          <div className="codeRow" key={button.id}>
+            <span className="codeRow__label">{button.label}</span>
+            <input
+              className="input codeRow__input"
+              value={codes[button.id] ?? ''}
+              placeholder="0x00FF906F"
+              aria-label={`${button.label} — ${t('sheet.code')}`}
+              onChange={(event) =>
+                setCodes((current) => ({ ...current, [button.id]: event.target.value }))
+              }
+            />
+          </div>
+        ))}
+      </div>
+      <button type="button" className="btn btn--primary btn--sm" style={{ marginTop: 10 }} onClick={save} disabled={saving}>
+        {saving ? t('common.saving') : t('sheet.saveCodes')}
+      </button>
+    </details>
+  );
+}

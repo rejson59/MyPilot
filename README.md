@@ -14,6 +14,7 @@ Działa od razu w trybie demo (bez ani jednego urządzenia), a architektura jest
 - **Panel urządzenia** — dedykowane sterowanie per typ: temperatura barwowa i kolory LED, odtwarzacz z parowaniem Bluetooth, pilot IR z D-padem, termostat klimy, Wake-on-LAN i aplikacje na PC, pierścień baterii telefonu.
 - **Energia** — pobór na żywo, koszt dnia i miesiąca, historia 8 dni, wykres 2 minut, ranking największych pożeraczy prądu.
 - **Polecenia** — `⌘K` / `Ctrl+K`, wyszukiwanie urządzeń i scen, nawigacja z klawiatury.
+- **Własne urządzenia** — kreator „Dodaj urządzenie” (8 szablonów) i uniwersalny pilot IR z edytorem kodów. Dodasz taśmę LED z Action, lampę Wi-Fi czy gniazdko bez dotykania kodu.
 - **PWA** — instalacja na telefonie/tablecie, działanie offline dla powłoki aplikacji.
 - **PL / EN**, jasny/ciemny motyw (także automatyczny), pełna responsywność: telefon → tablet → desktop.
 
@@ -62,6 +63,21 @@ Przełącznik w **Ustawienia → Tryb pracy**. Tryb demo nie wymaga niczego i po
 
 W `server/adapters.ts` są kody Samsunga dla `power`, `vol+`, `vol-`, `mute`. **Kody nawigacji nie są zgadywane** — dla swojego modelu przechwyć je pilotem i dopisz do mapy. Aplikacja w trybie live powie wprost, którego kodu brakuje.
 
+### 1a. Taśma LED Grundig z Action (i podobne)
+
+Te taśmy (5 m, ~40 zł, z pilotem) to **zwykle zwykłe RGB na podczerwień**, a nie Wi-Fi jak LSC Smart Connect. Sprawdź to w 5 sekund: skieruj pilot w **kamerę telefonu** i naciśnij przycisk — fioletowa dioda w obiektywie oznacza IR. Jeśli pilot działa przez ścianę i bez celowania, to RF 433 MHz (wtedy potrzebny Broadlink RM4 Pro z RF; nie ma go jeszcze w adapterach).
+
+Dla IR:
+
+1. Podłącz mostek IR (patrz wyżej).
+2. **Dodaj urządzenie → Taśma LED z pilotem**.
+3. W Tasmota włącz `IRrecv`, naciśnij przycisk pilota — w konsoli pojawi się kod (`{"Protocol":"NEC","Bits":32,"Data":"0x00FF906F"}`).
+4. Otwórz urządzenie w MyPilot → **Kody IR** → wklej kod przy przycisku → **Zapisz kody**.
+
+Bez kodów taśma działa w trybie demo (przyciski zmieniają stan w aplikacji). Z kodami tryb live wysyła je naprawdę. Kolory i efekty są edytowalne — to tylko lista przycisków w `meta.buttons`.
+
+Jeśli Twoja taśma jednak ma Wi-Fi (inny model), dodaj ją przez Home Assistant z integracją Tuya — MyPilot podłączy się do HA jednym tokenem.
+
 ### 2. Głośnik Bluetooth
 
 ```bash
@@ -106,6 +122,8 @@ Serwer trzyma stan w pamięci i zapisuje go co 10 s do `data/state.json`. Cała 
 | GET | `/api/snapshot` | Pełny stan: urządzenia, sceny, automatyzacje, energia |
 | PATCH | `/api/devices/:id` | Zmiana stanu (jasność, głośność, temperatura…) z walidacją |
 | POST | `/api/devices/:id/command` | `toggle`, `play`, `next`, `ir-key`, `wake`, `bt-connect`… |
+| POST/DELETE | `/api/devices` · `/api/devices/:id` | Dodanie / usunięcie własnego urządzenia |
+| PATCH | `/api/devices/:id/info` | Nazwa, strefa, model, kody IR (`meta.buttons`) |
 | POST | `/api/scenes/:id/apply` | Wykonanie sceny |
 | PATCH | `/api/automations/:id` | Włącz/wyłącz regułę |
 | POST | `/api/automations/:id/run` | Uruchomienie ręczne |
@@ -126,7 +144,7 @@ src/
   lib/             API, store (zustand), i18n, formatowanie
   index.css        design tokens + cały layout (bez frameworka CSS)
 public/            manifest PWA, service worker, ikony
-data/              stan i konfiguracja runtime (poza gitem!)
+data/              stan, konfiguracja i własne urządzenia (poza gitem!)
 ```
 
 ## Bezpieczeństwo
@@ -139,6 +157,8 @@ data/              stan i konfiguracja runtime (poza gitem!)
 
 - Agent MyPilot (Rust/Go) dla Windows/macOS/Linux + companion app na Androida.
 - Kreator automatyzacji (warunki, harmonogramy, obecność).
+- Adapter RF 433 MHz (Broadlink RM4 Pro) dla taśm z pilotem radiowym.
+- Nauka kodów IR jednym kliknięciem (przechwycenie z mostka zamiast wklejania).
 - Integracja MQTT i auto-discovery Tasmota.
 - Sceny uczące się z historii („tak zwykle robisz o 22:00”).
 - Wsparcie dla żarówek Hue i czujników Zigbee przez Home Assistant.

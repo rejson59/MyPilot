@@ -6,18 +6,22 @@ import type {
   Automation,
   BluetoothPeer,
   Device,
+  DeviceKind,
   DeviceState,
   EnergyReport,
   EventKind,
+  IrButton,
   LocalizedText,
   Scene,
   SceneResult,
   ServerMessage,
   Snapshot,
+  Transport,
+  ZoneId,
 } from '../shared/types.js';
-import { loadConfig, saveConfig, stateFile, toPublicConfig, type StoredConfig } from './config.js';
+import { customDevicesFile, loadConfig, saveConfig, stateFile, toPublicConfig, type StoredConfig } from './config.js';
 import { seedAutomations, seedDevices, seedScenes } from './seed.js';
-import { btConnect, btDisconnect, sendIr, setSystemVolume } from './adapters.js';
+import { btConnect, btDisconnect, sendIr, sendIrRaw, setSystemVolume } from './adapters.js';
 
 const VERSION = '0.1.0';
 const ENERGY_SEED = [1.24, 1.02, 1.61, 0.88, 1.35, 1.78, 1.11];
@@ -120,8 +124,57 @@ const nextTrack = (track: any) => {
   return { ...playlist[(index + 1 + playlist.length) % playlist.length], position: 0 };
 };
 
+
+const KIND_CAPABILITIES: Record<DeviceKind, Device['capabilities']> = {
+  light: ['power', 'brightness', 'colorTemp'],
+  led_strip: ['power', 'brightness', 'color', 'effect'],
+  speaker: ['power', 'volume', 'playback', 'source'],
+  tv: ['power', 'volume', 'input', 'irRemote'],
+  ac: ['power', 'thermostat', 'fan', 'irRemote'],
+  pc: ['power', 'wake', 'volume', 'apps'],
+  laptop: ['power', 'wake', 'volume', 'apps'],
+  phone: ['battery', 'dnd', 'volume', 'apps'],
+  tablet: ['battery', 'dnd', 'apps'],
+  plug: ['power', 'metering'],
+  blind: ['position'],
+};
+
+const KIND_DEFAULT_STATE: Record<DeviceKind, DeviceState> = {
+  light: { on: false, brightness: 70, tempK: 3000 },
+  led_strip: { on: false, brightness: 60, color: '#ff2d55', effect: 'Statyczny' },
+  speaker: {
+    on: false,
+    playing: false,
+    volume: 40,
+    source: 'bluetooth',
+    track: { title: '—', artist: '—', album: '—', duration: 240, position: 0, artwork: '#5b6cff' },
+  },
+  tv: { on: false, volume: 20, muted: false, input: 'HDMI 1' },
+  ac: { on: false, mode: 'cool', target: 22, fan: 1, swing: false },
+  pc: { on: false, volume: 40, muted: false, activeApp: '—', cpu: 10, tempC: 42 },
+  laptop: { on: false, volume: 40, muted: false, activeApp: '—', cpu: 10, tempC: 42 },
+  phone: { on: true, battery: 100, charging: false, dnd: false, mediaVolume: 50, screenOn: false },
+  tablet: { on: true, battery: 100, charging: false, dnd: false, screenOn: false },
+  plug: { on: false, loadW: 0, energyKwh: 0 },
+  blind: { position: 100 },
+};
+
+const ZONES: ZoneId[] = ['room', 'desk', 'bed'];
+const TRANSPORTS: Transport[] = ['wifi', 'ir', 'bluetooth', 'agent', 'ha', 'mock'];
+
+function loadCustomDevices(): Device[] {
+  try {
+    const raw = JSON.parse(fs.readFileSync(customDevicesFile, 'utf8')) as Device[];
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((device) => device?.id?.startsWith('custom-'));
+  } catch {
+    return [];
+  }
+}
+
 export class Room {
   devices: Device[];
+  customDevices: Device[] = [];
   scenes: Scene[];
   automations: Automation[];
   events: ActivityEvent[] = [];
@@ -145,6 +198,8 @@ export class Room {
   constructor() {
     this.config = loadConfig();
     this.devices = seedDevices();
+    this.customDevices = loadCustomDevices();
+    this.devices.push(...this.customDevices);
     this.scenes = seedScenes();
     this.automations = seedAutomations();
     this.todayKwh = 0.62;
@@ -412,6 +467,55 @@ export class Room {
         return note(true, { pl: `Trwa: ${updated.artist} — ${updated.title}`, en: `Now playing: ${updated.artist} — ${updated.title}` });
       }
 
+
+      case 'ir-button': {
+        const buttons = (device.meta?.buttons as IrButton[] | undefined) ?? [];
+        const button = buttons.find((item) => item.id === String(payload.buttonId));
+        if (!button) return note(false, { pl: 'Nie znaleziono przycisku.', en: 'Button not found.' });
+        const state = device.state as Record<string, any>;
+        switch (button.action) {
+          case 'toggle':
+            this.applyPatch(deviceId, { on: !state.on });
+            break;
+          case 'on':
+            this.applyPatch(deviceId, { on: true });
+            break;
+          case 'off':
+            this.applyPatch(deviceId, { on: false });
+            break;
+          case 'bright+':
+            this.applyPatch(deviceId, { on: true, brightness: clamp(Number(state.brightness ?? 0) + 10, 0, 100) });
+            break;
+          case 'bright-':
+            this.applyPatch(deviceId, { on: true, brightness: clamp(Number(state.brightness ?? 0) - 10, 0, 100) });
+            break;
+          case 'color':
+            this.applyPatch(deviceId, { on: true, color: String(button.value ?? '#ffffff') });
+            break;
+          case 'effect':
+            this.applyPatch(deviceId, { on: true, effect: String(button.value ?? 'Statyczny') });
+            break;
+          default:
+            break;
+        }
+
+        if (!live) {
+          return note(true, { pl: `Pilot: ${button.label} (demo)`, en: `Remote: ${button.label} (demo)` });
+        }
+        if (!button.code) {
+          return note(false, {
+            pl: `Brak kodu IR dla „${button.label}”. Przechwyć go pilotem i dopisz w panelu urządzenia.`,
+            en: `No IR code for “${button.label}”. Capture it and add it in the device panel.`,
+          });
+        }
+        const irResult = await sendIrRaw(this.config, {
+          code: button.code,
+          protocol: button.protocol,
+          bits: button.bits,
+        });
+        return note(irResult.ok, irResult.message);
+      }
+
       case 'bt-connect': {
         const result = live ? await btConnect(this.config) : { ok: true, message: { pl: 'Symulacja: sparowano z głośnikiem.', en: 'Simulated: speaker paired.' } };
         this.applyPatch(deviceId, { on: true, source: 'bluetooth', playing: true });
@@ -491,6 +595,101 @@ export class Room {
     return this.config.mode === 'live' ? peers : peers;
   }
 
+
+  /* ---------------------------- własne urządzenia -------------------------- */
+
+  private persistCustom() {
+    try {
+      fs.writeFileSync(customDevicesFile, JSON.stringify(this.customDevices, null, 2));
+    } catch {
+      /* brak zapisu nie blokuje aplikacji */
+    }
+  }
+
+  createDevice(input: {
+    name?: string | LocalizedText;
+    kind?: DeviceKind;
+    zone?: ZoneId;
+    transport?: Transport;
+    model?: string;
+    state?: DeviceState;
+    meta?: Record<string, unknown>;
+  }): Device {
+    const kind = (input.kind ?? 'light') as DeviceKind;
+    if (!KIND_CAPABILITIES[kind]) throw new Error(`Nieznany typ urządzenia: ${kind}`);
+    const room = new Date().toISOString();
+    const rawName = input.name ?? (input.kind ? KIND_CAPABILITIES[kind] && 'Nowe urządzenie' : 'Nowe urządzenie');
+    const name: LocalizedText =
+      typeof rawName === 'string'
+        ? { pl: rawName.trim().slice(0, 48) || 'Nowe urządzenie', en: rawName.trim().slice(0, 48) || 'New device' }
+        : rawName;
+
+    const device: Device = {
+      id: `custom-${Math.random().toString(36).slice(2, 8)}`,
+      name,
+      kind,
+      zone: ZONES.includes(input.zone ?? 'room') ? (input.zone ?? 'room') : 'room',
+      transport: TRANSPORTS.includes(input.transport ?? 'wifi') ? (input.transport ?? 'wifi') : 'wifi',
+      online: true,
+      capabilities: KIND_CAPABILITIES[kind],
+      state: { ...structuredClone(KIND_DEFAULT_STATE[kind]), ...(input.state ?? {}) },
+      powerW: 0,
+      model: (input.model ?? 'Własne urządzenie').slice(0, 64),
+      meta: { custom: true, addedAt: room, ...(input.meta ?? {}) },
+    };
+    device.powerW = computePower(device);
+
+    this.devices.push(device);
+    this.customDevices.push(device);
+    this.persistCustom();
+    this.addEvent('system', {
+      pl: `Dodano urządzenie „${device.name.pl}”.`,
+      en: `Device “${device.name.en}” added.`,
+    }, device.id);
+    this.broadcastSnapshot();
+    return device;
+  }
+
+  updateDeviceInfo(
+    deviceId: string,
+    patch: { name?: string | LocalizedText; zone?: ZoneId; model?: string; meta?: Record<string, unknown> },
+  ) {
+    const device = this.device(deviceId);
+    if (!device || !device.id.startsWith('custom-')) return { ok: false };
+    if (patch.name) {
+      const name =
+        typeof patch.name === 'string'
+          ? { pl: patch.name.slice(0, 48), en: patch.name.slice(0, 48) }
+          : patch.name;
+      device.name = name;
+    }
+    if (patch.zone && ZONES.includes(patch.zone)) device.zone = patch.zone;
+    if (typeof patch.model === 'string') device.model = patch.model.slice(0, 64);
+    if (patch.meta) device.meta = { ...device.meta, ...patch.meta };
+    this.persistCustom();
+    this.persistSoon();
+    this.broadcastSnapshot();
+    return { ok: true };
+  }
+
+  deleteDevice(deviceId: string) {
+    const device = this.device(deviceId);
+    if (!device || !device.id.startsWith('custom-')) return { ok: false };
+    this.devices = this.devices.filter((item) => item.id !== deviceId);
+    this.customDevices = this.customDevices.filter((item) => item.id !== deviceId);
+    this.scenes = this.scenes.map((scene) => ({
+      ...scene,
+      actions: scene.actions.filter((action) => action.deviceId !== deviceId),
+    }));
+    this.persistCustom();
+    this.addEvent('system', {
+      pl: `Usunięto urządzenie „${device.name.pl}”.`,
+      en: `Device “${device.name.en}” removed.`,
+    });
+    this.broadcastSnapshot();
+    return { ok: true };
+  }
+
   /* -------------------------------- config -------------------------------- */
 
   updateConfig(patch: Partial<StoredConfig>) {
@@ -514,7 +713,8 @@ export class Room {
   }
 
   reset() {
-    this.devices = seedDevices();
+    this.customDevices = this.devices.filter((device) => device.id.startsWith('custom-'));
+    this.devices = [...seedDevices(), ...this.customDevices];
     this.scenes = seedScenes();
     this.automations = seedAutomations();
     this.todayKwh = 0.62;

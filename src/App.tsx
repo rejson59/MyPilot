@@ -19,6 +19,7 @@ import { Dashboard } from './components/Dashboard';
 import { DeviceSheet } from './components/DeviceSheet';
 import { CommandPalette } from './components/CommandPalette';
 import { HubInfo } from './components/HubInfo';
+import { AddDeviceModal } from './components/AddDeviceModal';
 import { Toasts } from './components/ui';
 import { ScenesView } from './views/Scenes';
 import { AutomationsView } from './views/Automations';
@@ -305,6 +306,7 @@ export default function App() {
       <DeviceSheet />
       <CommandPalette />
       <HubInfo />
+      <AddDeviceModal />
       <Toasts />
     </div>
   );

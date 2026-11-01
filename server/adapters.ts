@@ -319,3 +319,62 @@ export async function testTarget(
       : { pl: 'Adres musi zaczynać się od mqtt:// lub mqtts://', en: 'URL must start with mqtt:// or mqtts://' },
   };
 }
+
+/* ------------------------------------------------------------------ */
+/*  Surowy kod IR — dla własnych urządzeń (taśma LED, lampa, cokolwiek) */
+/* ------------------------------------------------------------------ */
+
+export async function sendIrRaw(
+  config: StoredConfig,
+  params: { code: string; protocol?: string; bits?: number },
+): Promise<AdapterResult> {
+  const { enabled, url, format } = config.irBridge;
+  if (!enabled || !url) {
+    return {
+      ok: false,
+      message: {
+        pl: 'Mostek IR nie jest skonfigurowany — przycisk zadziałał tylko w aplikacji.',
+        en: 'IR bridge is not configured — the button worked in the app only.',
+      },
+    };
+  }
+
+  const started = Date.now();
+  try {
+    if (format === 'tasmota') {
+      const payload = encodeURIComponent(
+        JSON.stringify({
+          Protocol: params.protocol ?? 'NEC',
+          Bits: params.bits ?? 32,
+          Data: params.code,
+        }),
+      );
+      const res = await fetch(`${url.replace(/\/$/, '')}/cm?cmnd=IRsend%20${payload}`, {
+        signal: AbortSignal.timeout(4000),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } else {
+      const res = await fetch(`${url.replace(/\/$/, '')}/ir`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(params),
+        signal: AbortSignal.timeout(4000),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    }
+    return {
+      ok: true,
+      latencyMs: Date.now() - started,
+      message: { pl: `Wysłano kod IR ${params.code}.`, en: `Sent IR code ${params.code}.` },
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      latencyMs: Date.now() - started,
+      message: {
+        pl: `Mostek IR nie odpowiedział (${(error as Error).message}).`,
+        en: `IR bridge did not respond (${(error as Error).message}).`,
+      },
+    };
+  }
+}

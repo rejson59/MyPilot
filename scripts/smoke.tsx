@@ -93,5 +93,43 @@ useApp.getState().setView('room');
 useApp.getState().openSheet('speaker');
 await new Promise((resolve) => setTimeout(resolve, 300));
 console.log('SHEET:', (document.querySelector('.sheet')?.textContent ?? '').replace(/\s+/g, ' ').slice(0, 180));
+// kreator dodawania urządzenia
+useApp.getState().closeSheet();
+useApp.getState().setAddOpen(true);
+await new Promise((resolve) => setTimeout(resolve, 300));
+console.log('TEMPLATES:', document.querySelectorAll('.templateCard').length);
+useApp.getState().setAddOpen(false);
+
+// własne urządzenie IR
+const created = await (await fetch('http://127.0.0.1:8787/api/devices', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    name: 'Taśma testowa',
+    kind: 'led_strip',
+    transport: 'ir',
+    zone: 'desk',
+    model: 'Test IR',
+    state: { on: true, brightness: 50, color: '#ff3b30', effect: 'Statyczny' },
+    meta: {
+      custom: true,
+      effects: ['Statyczny', 'Fade'],
+      buttons: [
+        { id: 'power', label: 'POWER', action: 'toggle' },
+        { id: 'red', label: 'CZERWONY', action: 'color', value: '#ff3b30' },
+      ],
+    },
+  }),
+})).json();
+const fresh = await (await fetch('http://127.0.0.1:8787/api/snapshot')).json();
+useApp.getState().setSnapshot(fresh);
+await new Promise((resolve) => setTimeout(resolve, 200));
+console.log('TILES_WITH_CUSTOM:', document.querySelectorAll('.tile').length);
+useApp.getState().openSheet(created.device.id);
+await new Promise((resolve) => setTimeout(resolve, 350));
+console.log('IR_KEYS:', document.querySelectorAll('.irKey').length);
+console.log('CODES_EDITOR:', document.querySelectorAll('.codeRow').length);
+await fetch(`http://127.0.0.1:8787/api/devices/${created.device.id}`, { method: 'DELETE' });
+
 console.log('ERRORS_TOTAL:', errors.length);
 process.exit(0);

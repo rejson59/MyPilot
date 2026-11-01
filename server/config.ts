@@ -83,3 +83,4 @@ export function toPublicConfig(config: StoredConfig): PublicConfig {
 
 export const dataDir = DATA_DIR;
 export const stateFile = path.join(DATA_DIR, 'state.json');
+export const customDevicesFile = path.join(DATA_DIR, 'custom-devices.json');

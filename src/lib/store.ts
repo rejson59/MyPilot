@@ -20,6 +20,7 @@ interface AppState {
   sheetDeviceId: string | null;
   paletteOpen: boolean;
   hubOpen: boolean;
+  addOpen: boolean;
   ready: boolean;
   toasts: Toast[];
 
@@ -33,6 +34,7 @@ interface AppState {
   closeSheet: () => void;
   setPalette: (open: boolean) => void;
   setHub: (open: boolean) => void;
+  setAddOpen: (open: boolean) => void;
   toast: (message: string, tone?: Toast['tone']) => void;
   dismissToast: (id: string) => void;
 }
@@ -63,6 +65,7 @@ export const useApp = create<AppState>((set) => ({
   sheetDeviceId: null,
   paletteOpen: false,
   hubOpen: false,
+  addOpen: false,
   ready: false,
   toasts: [],
 
@@ -83,6 +86,7 @@ export const useApp = create<AppState>((set) => ({
   closeSheet: () => set({ sheetDeviceId: null }),
   setPalette: (paletteOpen) => set({ paletteOpen }),
   setHub: (hubOpen) => set({ hubOpen }),
+  setAddOpen: (addOpen) => set({ addOpen }),
   toast: (message, tone = 'info') =>
     set((state) => ({
       toasts: [...state.toasts.slice(-2), { id: Math.random().toString(36).slice(2), message, tone }],

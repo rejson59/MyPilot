@@ -1,5 +1,6 @@
 import type {
   BluetoothPeer,
+  Device,
   LocalizedText,
   PublicConfig,
   SetupTestResult,
@@ -28,6 +29,20 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(patch),
     }),
+
+  createDevice: (payload: Record<string, unknown>) =>
+    request<{ ok: boolean; device: Device }>('/api/devices', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  updateDeviceInfo: (id: string, payload: Record<string, unknown>) =>
+    request<{ ok: boolean }>(`/api/devices/${id}/info`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+
+  deleteDevice: (id: string) => request<{ ok: boolean }>(`/api/devices/${id}`, { method: 'DELETE' }),
 
   command: (id: string, command: string, payload: Record<string, unknown> = {}) =>
     request<{ ok: boolean; message: LocalizedText }>(`/api/devices/${id}/command`, {
