@@ -144,6 +144,7 @@ export interface PublicConfig {
   bluetooth: { enabled: boolean; adapter: string; speakerMac: string; speakerName: string };
   homeAssistant: { enabled: boolean; url: string; hasToken: boolean };
   mqtt: { enabled: boolean; url: string; username: string; hasPassword: boolean };
+  agent: { enabled: boolean; url: string; hasToken: boolean };
 }
 
 export interface Ambient {
@@ -197,7 +198,7 @@ export interface BluetoothPeer {
 }
 
 export interface SetupTestResult {
-  target: 'ir' | 'bluetooth' | 'homeassistant' | 'mqtt';
+  target: 'ir' | 'bluetooth' | 'homeassistant' | 'mqtt' | 'agent';
   ok: boolean;
   message: LocalizedText;
   latencyMs?: number;

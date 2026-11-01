@@ -62,7 +62,7 @@ export const api = {
   saveConfig: (patch: Partial<PublicConfig> & Record<string, unknown>) =>
     request<PublicConfig>('/api/config', { method: 'PUT', body: JSON.stringify(patch) }),
 
-  testIntegration: (target: 'ir' | 'bluetooth' | 'homeassistant' | 'mqtt', payload: Record<string, unknown>) =>
+  testIntegration: (target: SetupTestResult['target'], payload: Record<string, unknown>) =>
     request<SetupTestResult>('/api/config/test', { method: 'POST', body: JSON.stringify({ target, ...payload }) }),
 
   scanBluetooth: () => request<{ peers: BluetoothPeer[] }>('/api/bluetooth/scan', { method: 'POST' }),

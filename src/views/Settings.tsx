@@ -6,6 +6,7 @@ import {
   Languages,
   LayoutGrid,
   Leaf,
+  Monitor,
   Palette,
   Radio,
   RotateCcw,
@@ -32,6 +33,9 @@ interface FormState {
   btAdapter: string;
   btMac: string;
   btName: string;
+  agentEnabled: boolean;
+  agentUrl: string;
+  agentToken: string;
   haEnabled: boolean;
   haUrl: string;
   haToken: string;
@@ -63,6 +67,9 @@ export function SettingsView() {
     btAdapter: config.bluetooth.adapter,
     btMac: config.bluetooth.speakerMac,
     btName: config.bluetooth.speakerName,
+    agentEnabled: config.agent.enabled,
+    agentUrl: config.agent.url,
+    agentToken: '',
     haEnabled: config.homeAssistant.enabled,
     haUrl: config.homeAssistant.url,
     haToken: '',
@@ -355,6 +362,79 @@ export function SettingsView() {
                 </span>
               </div>
               {result('bluetooth')}
+            </div>
+
+            {/* Agent MyPilot */}
+            <div style={{ padding: '16px 0', borderBottom: '1px solid var(--line)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                <span className="setCard__icon" style={{ width: 30, height: 30, borderRadius: 9 }}>
+                  <Monitor size={15} />
+                </span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 600 }}>{t('settings.agent')}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{t('settings.agentDesc')}</div>
+                </div>
+                {status(config.agent.enabled && config.agent.hasToken)}
+              </div>
+              <div className="formGrid">
+                <div className="formRow">
+                  <label htmlFor="agentUrl">{t('settings.agentUrl')}</label>
+                  <input
+                    id="agentUrl"
+                    className="input"
+                    value={form.agentUrl}
+                    onChange={set('agentUrl')}
+                    placeholder="http://127.0.0.1:8790"
+                  />
+                </div>
+                <div className="formRow">
+                  <label htmlFor="agentToken">{t('settings.agentToken')}</label>
+                  <input
+                    id="agentToken"
+                    className="input"
+                    type="password"
+                    value={form.agentToken}
+                    onChange={set('agentToken')}
+                    placeholder={config.agent.hasToken ? t('common.secretSaved') : 'np. 9f3c…'}
+                  />
+                </div>
+              </div>
+              <div className="setFooter">
+                <button
+                  type="button"
+                  className="btn btn--sm"
+                  onClick={() => test('agent', { url: form.agentUrl, token: form.agentToken })}
+                  disabled={testing === 'agent'}
+                >
+                  {testing === 'agent' ? t('common.testing') : t('common.test')}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--primary btn--sm"
+                  onClick={() =>
+                    save('agent', {
+                      agent: {
+                        enabled: form.agentEnabled,
+                        url: form.agentUrl,
+                        ...(form.agentToken ? { token: form.agentToken } : {}),
+                      },
+                    })
+                  }
+                  disabled={saving === 'agent'}
+                >
+                  {saving === 'agent' ? t('common.saving') : t('common.save')}
+                </button>
+                <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-2)' }}>
+                  {t('common.enabled')}
+                  <Switch
+                    checked={form.agentEnabled}
+                    onChange={(value) => setForm((current) => ({ ...current, agentEnabled: value }))}
+                    label={t('settings.agent')}
+                  />
+                </span>
+              </div>
+              <div className="note">{t('settings.agentHow')}</div>
+              {result('agent')}
             </div>
 
             {/* Home Assistant */}

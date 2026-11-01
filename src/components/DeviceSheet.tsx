@@ -690,9 +690,27 @@ function PcControls({ device }: { device: Device }) {
 
       <div className="block">
         <div className="block__head">
-          <span className="block__label">{t('sheet.apps')}</span>
+          <span className="block__label">Media</span>
+          <span className="block__value">
+            {state.muted ? <VolumeX size={13} style={{ display: 'inline' }} /> : `${Math.round(state.volume ?? 0)}%`}
+          </span>
         </div>
-        <div className="effectRow">
+        <div className="setFooter" style={{ marginTop: 0 }}>
+          <button type="button" className="btn btn--sm" onClick={() => command('media', { action: 'prev' })} aria-label="Poprzedni">
+            <SkipBack size={13} />
+          </button>
+          <button type="button" className="btn btn--sm" onClick={() => command('media', { action: 'play-pause' })} aria-label="Play/Pauza">
+            <Pause size={13} />
+          </button>
+          <button type="button" className="btn btn--sm" onClick={() => command('media', { action: 'next' })} aria-label="Następny">
+            <SkipForward size={13} />
+          </button>
+          <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-2)' }}>
+            <VolumeX size={13} /> mute
+            <Switch checked={Boolean(state.muted)} accent="#6366f1" onChange={() => command('mute')} label="Mute" />
+          </span>
+        </div>
+        <div className="effectRow" style={{ marginTop: 12 }}>
           {apps.map((app) => (
             <button
               key={app}

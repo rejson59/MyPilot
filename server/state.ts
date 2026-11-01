@@ -22,6 +22,7 @@ import type {
 import { customDevicesFile, loadConfig, saveConfig, stateFile, toPublicConfig, type StoredConfig } from './config.js';
 import { seedAutomations, seedDevices, seedScenes } from './seed.js';
 import { btConnect, btDisconnect, sendIr, sendIrRaw, setSystemVolume } from './adapters.js';
+import { agentCommand, readAgentState, wakeOnLan } from './agent.js';
 
 const VERSION = '0.1.0';
 const ENERGY_SEED = [1.24, 1.02, 1.61, 0.88, 1.35, 1.78, 1.11];
@@ -194,6 +195,9 @@ export class Room {
   private sampleClock = 0;
   private automationGuard = 0;
   private suppressTriggers = 0;
+  private agentFailures = 0;
+  private lastAgentPoll = 0;
+  private agentPolling = false;
 
   constructor() {
     this.config = loadConfig();
@@ -445,6 +449,11 @@ export class Room {
         const value = clamp(Number(payload.value ?? 0), 0, 100);
         this.applyPatch(deviceId, { volume: value });
         if (live && device.kind === 'speaker') await setSystemVolume(value);
+        if (live && this.config.agent.enabled && (device.kind === 'pc' || device.kind === 'laptop')) {
+          const result = await agentCommand(this.config, '/volume', { level: value });
+          if (!result.ok) return note(false, result.message);
+          return note(true, { pl: `Głośność komputera: ${value}% (agent).`, en: `Computer volume: ${value}% (agent).` });
+        }
         return note(true, { pl: `Głośność ${value}%.`, en: `Volume ${value}%.` });
       }
 
@@ -545,24 +554,71 @@ export class Room {
       }
 
       case 'wake': {
+        const mac = typeof device.meta?.mac === 'string' ? device.meta.mac : '';
+        if (live && mac) {
+          const result = await wakeOnLan(mac);
+          if (!result.ok) return note(false, result.message);
+          this.applyPatch(deviceId, { on: true, cpu: 15 });
+          this.addEvent('command', result.message, device.id);
+          return note(true, result.message);
+        }
         this.applyPatch(deviceId, { on: true, cpu: 12 });
         device.state.activeApp = 'Uruchamianie…';
-        this.addEvent('command', {
-          pl: `Wysłano magic packet (Wake-on-LAN) do ${device.name.pl}.`,
-          en: `Wake-on-LAN magic packet sent to ${device.name.en}.`,
+        return note(true, {
+          pl: mac
+            ? 'Wysłano magic packet (demo). W trybie live pójdzie prawdziwy WoL.'
+            : 'Budzę komputer (demo) — dodaj MAC urządzenia, żeby wysłać prawdziwy WoL.',
+          en: mac
+            ? 'Magic packet sent (demo). Live mode sends a real WoL packet.'
+            : 'Waking the computer (demo) — add the device MAC to send a real WoL packet.',
         });
-        return note(true, { pl: 'Budzę komputer…', en: 'Waking the computer…' });
       }
 
       case 'sleep': {
+        if (live && this.config.agent.enabled && (device.kind === 'pc' || device.kind === 'laptop')) {
+          const result = await agentCommand(this.config, '/power', { action: 'sleep' });
+          if (!result.ok) return note(false, result.message);
+        }
         this.applyPatch(deviceId, { on: false });
         return note(true, { pl: 'Komputer przechodzi w stan uśpienia.', en: 'Computer is going to sleep.' });
       }
 
       case 'launch-app': {
         const app = String(payload.app ?? '');
+        if (live && this.config.agent.enabled && (device.kind === 'pc' || device.kind === 'laptop')) {
+          const result = await agentCommand(this.config, '/apps/launch', { name: app });
+          if (!result.ok) return note(false, result.message);
+        }
         this.applyPatch(deviceId, { on: true, activeApp: app });
         return note(true, { pl: `Uruchomiono ${app}.`, en: `Launched ${app}.` });
+      }
+
+      case 'mute': {
+        if (live && this.config.agent.enabled && (device.kind === 'pc' || device.kind === 'laptop')) {
+          const result = await agentCommand(this.config, '/mute', {});
+          if (!result.ok) return note(false, result.message);
+        }
+        this.applyPatch(deviceId, { muted: !device.state.muted });
+        return note(true, {
+          pl: `Wyciszenie: ${device.state.muted ? 'włączone' : 'wyłączone'}.`,
+          en: `Mute: ${device.state.muted ? 'on' : 'off'}.`,
+        });
+      }
+
+      case 'media': {
+        const action = String(payload.action ?? 'play-pause');
+        if (!['play-pause', 'next', 'prev'].includes(action)) {
+          return note(false, { pl: 'Nieznana akcja mediów.', en: 'Unknown media action.' });
+        }
+        if (live && this.config.agent.enabled && (device.kind === 'pc' || device.kind === 'laptop')) {
+          const result = await agentCommand(this.config, '/media', { action });
+          if (!result.ok) return note(false, result.message);
+          return note(true, result.message);
+        }
+        return note(true, {
+          pl: `Multimedia: ${action} (demo).`,
+          en: `Media: ${action} (demo).`,
+        });
       }
 
       case 'ring': {
@@ -700,9 +756,15 @@ export class Room {
       bluetooth: { ...this.config.bluetooth, ...(patch.bluetooth ?? {}) },
       homeAssistant: { ...this.config.homeAssistant, ...(patch.homeAssistant ?? {}) },
       mqtt: { ...this.config.mqtt, ...(patch.mqtt ?? {}) },
+      agent: { ...this.config.agent, ...(patch.agent ?? {}) },
     };
     this.config.homeAssistant.hasToken = Boolean(this.config.homeAssistant.token);
     this.config.mqtt.hasPassword = Boolean(this.config.mqtt.password);
+    this.config.agent.hasToken = Boolean(this.config.agent.token);
+    if (this.config.mode !== 'live') {
+      this.agentFailures = 0;
+      for (const device of this.computers()) device.online = true;
+    }
     saveConfig(this.config);
     this.addEvent('system', {
       pl: `Konfiguracja zapisana. Tryb: ${this.config.mode === 'live' ? 'prawdziwe urządzenia' : 'symulacja'}.`,
@@ -844,7 +906,48 @@ export class Room {
     const plug = this.devices.find((d) => d.id === 'plug')?.state as any;
     if (plug?.on) plug.loadW = Math.round(clamp(Number(plug.loadW) + (Math.random() - 0.5) * 6, 18, 90));
 
+    if (this.config.mode === 'live' && this.config.agent.enabled && Date.now() - this.lastAgentPoll > 4000) {
+      this.lastAgentPoll = Date.now();
+      void this.pollAgent();
+    }
+
     this.broadcastSnapshot();
+  }
+
+  private computers() {
+    return this.devices.filter((device) => device.kind === 'pc' || device.kind === 'laptop');
+  }
+
+  /** Odpytywanie prawdziwego agenta na komputerze (tryb live). */
+  private async pollAgent() {
+    if (this.agentPolling) return;
+    this.agentPolling = true;
+    try {
+      const state = await readAgentState(this.config);
+      if (state) {
+        this.agentFailures = 0;
+        for (const device of this.computers()) {
+          const local = device.state as Record<string, any>;
+          device.online = true;
+          if (state.cpuPct != null) local.cpu = Math.round(state.cpuPct);
+          if (state.volume != null) local.volume = Math.round(state.volume);
+          if (state.tempC != null) local.tempC = Math.round(state.tempC);
+          if (state.activeApp) local.activeApp = state.activeApp;
+          device.powerW = computePower(device);
+        }
+      } else {
+        this.agentFailures++;
+        if (this.agentFailures === 2) {
+          for (const device of this.computers()) device.online = false;
+          this.addEvent('warning', {
+            pl: 'Agent MyPilot nie odpowiada — komputer oznaczony jako offline.',
+            en: 'MyPilot Agent is not responding — computer marked offline.',
+          });
+        }
+      }
+    } finally {
+      this.agentPolling = false;
+    }
   }
 
   /* -------------------------------- snapshot ------------------------------ */
@@ -887,14 +990,19 @@ export class Room {
       },
       {
         id: 'agent',
-        label: 'Agent MyPilot (PC / telefon)',
+        label: 'Agent MyPilot (komputer)',
         transport: 'agent',
-        configured: true,
-        devices: this.devices.filter((d) => d.transport === 'agent').length,
-        note: {
-          pl: 'Mały program na komputerze/telefonie zdejmuje głośność, aplikacje i baterię.',
-          en: 'A small app on your computer/phone exposes volume, apps and battery.',
-        },
+        configured: Boolean(this.config.agent.enabled && this.config.agent.token),
+        devices: this.computers().length,
+        note: this.config.agent.enabled
+          ? {
+              pl: 'Agent podłączony: realna głośność, CPU, aplikacje i usypianie.',
+              en: 'Agent connected: real volume, CPU, apps and sleep.',
+            }
+          : {
+              pl: 'Uruchom „npm run agent” na komputerze, żeby sterować nim naprawdę.',
+              en: 'Run “npm run agent” on your computer to control it for real.',
+            },
       },
       {
         id: 'homeassistant',

@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { LocalizedText, SetupTestResult } from '../shared/types.js';
 import type { StoredConfig } from './config.js';
+import { probeAgent } from './agent.js';
 
 const run = promisify(execFile);
 
@@ -303,6 +304,11 @@ export async function testTarget(
         },
       };
     }
+  }
+
+  if (target === 'agent') {
+    const probe = await probeAgent(config);
+    return { target, ok: probe.ok, message: probe.message, latencyMs: probe.latencyMs };
   }
 
   // MQTT — sprawdzamy tylko format URL-a; realne połączenie robi broker.

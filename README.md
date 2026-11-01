@@ -14,6 +14,7 @@ Działa od razu w trybie demo (bez ani jednego urządzenia), a architektura jest
 - **Panel urządzenia** — dedykowane sterowanie per typ: temperatura barwowa i kolory LED, odtwarzacz z parowaniem Bluetooth, pilot IR z D-padem, termostat klimy, Wake-on-LAN i aplikacje na PC, pierścień baterii telefonu.
 - **Energia** — pobór na żywo, koszt dnia i miesiąca, historia 8 dni, wykres 2 minut, ranking największych pożeraczy prądu.
 - **Polecenia** — `⌘K` / `Ctrl+K`, wyszukiwanie urządzeń i scen, nawigacja z klawiatury.
+- **Prawdziwy agent** — `npm run agent` na komputerze daje realną głośność, multimedia, CPU, baterię, uruchamianie aplikacji, uśpienie i Wake-on-LAN. Bez chmury, po tokenie.
 - **Własne urządzenia** — kreator „Dodaj urządzenie” (8 szablonów) i uniwersalny pilot IR z edytorem kodów. Dodasz taśmę LED z Action, lampę Wi-Fi czy gniazdko bez dotykania kodu.
 - **PWA** — instalacja na telefonie/tablecie, działanie offline dla powłoki aplikacji.
 - **PL / EN**, jasny/ciemny motyw (także automatyczny), pełna responsywność: telefon → tablet → desktop.
@@ -35,7 +36,7 @@ npm run build
 npm start        # serwuje dist/ + API na jednym porcie 8787
 ```
 
-Inne skrypty: `npm run typecheck`, `npm run icons`, `npm run smoke` (test renderowania — wymaga uruchomionego serwera).
+Inne skrypty: `npm run agent` (agent na komputer), `npm run typecheck`, `npm run icons`, `npm run smoke` (test renderowania — wymaga uruchomionego serwera).
 
 ## Demo czy prawdziwy sprzęt?
 
@@ -48,9 +49,9 @@ Przełącznik w **Ustawienia → Tryb pracy**. Tryb demo nie wymaga niczego i po
 | Głośnik Bluetooth (Linux) | **Działa** — `bluetoothctl` + `pactl` do głośności |
 | Home Assistant | **Test połączenia i wywołania usług** przez REST API z tokenem |
 | MQTT | Zapis konfiguracji i walidacja adresu; publikacja/subskrypcja to kolejny krok |
-| Agent MyPilot (PC / laptop / telefon) | **Symulowany** — protokół i UI gotowe, binarka agenta jeszcze nie istnieje |
+| Agent MyPilot (PC / laptop) | **Działa** — `npm run agent`, głośność, multimedia, aplikacje, CPU, uśpienie; Wake-on-LAN z serwera |
 
-Świadomie nie udaję, że steruję Twoim telefonem: aplikacja pokazuje, jak będzie to wyglądać, i ma gotowe miejsce na agenta (ADB na Androidzie, usługa na Windows/macOS).
+Komputer ma już prawdziwego agenta. Telefon i tablet nadal są symulowane — aplikacja pokazuje docelowy interfejs i ma gotowe miejsce na companion appkę (ADB na Androidzie).
 
 ## Podłączenie sprzętu
 
@@ -95,9 +96,15 @@ MAC, nazwę i adapter (`hci0`) wpisz w Ustawieniach, włącz integrację i spraw
 
 Hub pozwala dodać setki urządzeń (Zigbee, Wi-Fi, chmury) bez pisania integracji. W aplikacji jest przycisk **Jak to działa**, który wyjaśnia to po ludzku.
 
-### 4. Komputer / telefon
+### 4. Komputer (agent)
 
-Docelowo mały agent wystawiający lokalne HTTP: głośność, uruchamianie aplikacji, bateria, DND, Wake-on-LAN. Do tego czasu te urządzenia są symulowane.
+```bash
+npm run agent        # albo: node agent/index.mjs
+```
+
+Agent wypisze w konsoli adres i token. Wklej je w **Ustawienia → Agent MyPilot**, włącz integrację i kliknij **Testuj**. Od tej chwili (w trybie live) suwak głośności, multimedia, CPU i aplikacje na PC są prawdziwe, a „Obudź” wysyła magic packet Wake-on-LAN (wymaga MAC w urządzeniu i WoL w BIOSie).
+
+Obsługiwane systemy i wymagane narzędzia (Linux: `pactl`/`playerctl`, macOS: wbudowane, Windows: `AudioDeviceCmdlets` lub `nircmd`), autostart i diagnostyka — w **[agent/README.md](agent/README.md)**. Telefon i tablet pozostają symulowane do czasu companion appki.
 
 ## Architektura
 
@@ -135,6 +142,7 @@ Serwer trzyma stan w pamięci i zapisuje go co 10 s do `data/state.json`. Cała 
 ## Struktura
 
 ```
+agent/             samodzielny agent na komputer (Node, zero zależności)
 server/            backend: stan, adaptery, API, WebSocket
 shared/types.ts    kontrakt danych serwer ↔ klient
 src/
@@ -152,10 +160,11 @@ data/              stan, konfiguracja i własne urządzenia (poza gitem!)
 - `data/` jest w `.gitignore` — **tokeny Home Assistanta i hasła MQTT nie trafiają do repozytorium**.
 - API nie ma autoryzacji, bo jest przeznaczone do sieci lokalnej. **Nie wystawiaj portu 8787 na internet** — jeśli potrzebujesz dostępu z zewnątrz, postaw VPN (WireGuard/Tailscale).
 - Konfiguracja jest maskowana przy odczycie: klient widzi tylko `hasToken` / `hasPassword`.
+- Token agenta jest porównywany w czasie stałym, a agent nie udostępnia powłoki — tylko wąski zestaw akcji. Domyślnie słucha na `127.0.0.1`.
 
 ## Pomysły na dalej
 
-- Agent MyPilot (Rust/Go) dla Windows/macOS/Linux + companion app na Androida.
+- Companionapp na Androida (obecnie telefon i tablet są symulowane).
 - Kreator automatyzacji (warunki, harmonogramy, obecność).
 - Adapter RF 433 MHz (Broadlink RM4 Pro) dla taśm z pilotem radiowym.
 - Nauka kodów IR jednym kliknięciem (przechwycenie z mostka zamiast wklejania).

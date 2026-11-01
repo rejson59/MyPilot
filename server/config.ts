@@ -2,9 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { PublicConfig } from '../shared/types.js';
 
-export interface StoredConfig extends Omit<PublicConfig, 'homeAssistant' | 'mqtt'> {
+export interface StoredConfig extends Omit<PublicConfig, 'homeAssistant' | 'mqtt' | 'agent'> {
   homeAssistant: PublicConfig['homeAssistant'] & { token: string };
   mqtt: PublicConfig['mqtt'] & { password: string };
+  agent: PublicConfig['agent'] & { token: string };
 }
 
 const DATA_DIR = path.resolve(process.cwd(), 'data');
@@ -24,6 +25,7 @@ export const defaultConfig: StoredConfig = {
   },
   homeAssistant: { enabled: false, url: 'http://homeassistant.local:8123', hasToken: false, token: '' },
   mqtt: { enabled: false, url: 'mqtt://192.168.1.10:1883', username: '', hasPassword: false, password: '' },
+  agent: { enabled: false, url: 'http://127.0.0.1:8790', hasToken: false, token: '' },
 };
 
 function ensureDir() {
@@ -42,6 +44,7 @@ export function loadConfig(): StoredConfig {
       bluetooth: { ...defaultConfig.bluetooth, ...(parsed.bluetooth ?? {}) },
       homeAssistant: { ...defaultConfig.homeAssistant, ...(parsed.homeAssistant ?? {}) },
       mqtt: { ...defaultConfig.mqtt, ...(parsed.mqtt ?? {}) },
+      agent: { ...defaultConfig.agent, ...(parsed.agent ?? {}) },
     };
   } catch {
     return structuredClone(defaultConfig);
@@ -77,6 +80,11 @@ export function toPublicConfig(config: StoredConfig): PublicConfig {
       url: config.mqtt.url,
       username: config.mqtt.username,
       hasPassword: Boolean(config.mqtt.password),
+    },
+    agent: {
+      enabled: config.agent.enabled,
+      url: config.agent.url,
+      hasToken: Boolean(config.agent.token),
     },
   };
 }
