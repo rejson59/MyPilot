@@ -1,2 +1,144 @@
 # MyPilot
-Aplikacja która pozwala poczuć kontrolę, miej połączone wszystkie urządzenia i aplikacje, pod ręką w jednej aplikacji!
+
+**Jeden pilot do wszystkiego, co ma prąd.** Światło, LED-y, głośnik, TV, klimatyzacja, komputer, laptop, telefon, tablet, gniazdko i roleta — w jednej aplikacji, która wygląda jak produkt, a nie panel administracyjny.
+
+Działa od razu w trybie demo (bez ani jednego urządzenia), a architektura jest przygotowana na podłączenie prawdziwego sprzętu: mostka IR, głośnika Bluetooth, agenta na PC i Home Assistant.
+
+---
+
+## Co potrafi
+
+- **Pokój na żywo** — kafle urządzeń z aktualnym stanem, suwakami jasności/głośności i przełącznikami. Stan leci przez WebSocket (1 s), z fallbackiem na polling, gdy sieć zerwie.
+- **6 scen** — Praca, Film, Sen, Impreza, Gaming, Wychodzę. Jedno dotknięcie zmienia kilkanaście urządzeń naraz. Scena podświetla się, gdy pokój faktycznie jest w jej stanie.
+- **4 automatyzacje** — reguły czasowe (23:30, 7:00) i sprzężone ze stanem urządzenia („TV włączony → przygaś światło”). Można je włączać i uruchamiać ręcznie.
+- **Panel urządzenia** — dedykowane sterowanie per typ: temperatura barwowa i kolory LED, odtwarzacz z parowaniem Bluetooth, pilot IR z D-padem, termostat klimy, Wake-on-LAN i aplikacje na PC, pierścień baterii telefonu.
+- **Energia** — pobór na żywo, koszt dnia i miesiąca, historia 8 dni, wykres 2 minut, ranking największych pożeraczy prądu.
+- **Polecenia** — `⌘K` / `Ctrl+K`, wyszukiwanie urządzeń i scen, nawigacja z klawiatury.
+- **PWA** — instalacja na telefonie/tablecie, działanie offline dla powłoki aplikacji.
+- **PL / EN**, jasny/ciemny motyw (także automatyczny), pełna responsywność: telefon → tablet → desktop.
+
+## Szybki start
+
+```bash
+npm install
+npm run dev
+```
+
+- Interfejs: **http://localhost:5173**
+- API + WebSocket: `http://127.0.0.1:8787` (Vite proxuje `/api` i `/ws`)
+
+Produkcja:
+
+```bash
+npm run build
+npm start        # serwuje dist/ + API na jednym porcie 8787
+```
+
+Inne skrypty: `npm run typecheck`, `npm run icons`, `npm run smoke` (test renderowania — wymaga uruchomionego serwera).
+
+## Demo czy prawdziwy sprzęt?
+
+Przełącznik w **Ustawienia → Tryb pracy**. Tryb demo nie wymaga niczego i pokazuje pełną funkcjonalność. Tryb live sprawia, że polecenia idą do adapterów.
+
+| Adapter | Stan w tej wersji |
+| --- | --- |
+| Symulator pokoju | Pełny — 12 urządzeń, energia, automatyzacje |
+| Mostek IR (ESP32/Tasmota, REST) | **Działa** — realne żądania HTTP, kody Samsung NEC dla power/vol/mute |
+| Głośnik Bluetooth (Linux) | **Działa** — `bluetoothctl` + `pactl` do głośności |
+| Home Assistant | **Test połączenia i wywołania usług** przez REST API z tokenem |
+| MQTT | Zapis konfiguracji i walidacja adresu; publikacja/subskrypcja to kolejny krok |
+| Agent MyPilot (PC / laptop / telefon) | **Symulowany** — protokół i UI gotowe, binarka agenta jeszcze nie istnieje |
+
+Świadomie nie udaję, że steruję Twoim telefonem: aplikacja pokazuje, jak będzie to wyglądać, i ma gotowe miejsce na agenta (ADB na Androidzie, usługa na Windows/macOS).
+
+## Podłączenie sprzętu
+
+### 1. Podczerwień (TV, klimatyzacja)
+
+1. Kup **ESP32 + diodę IR** (ok. 30 zł) albo Broadlink RM4.
+2. Wgraj **Tasmotę** i włącz `IRsend`.
+3. W Ustawieniach wpisz adres mostka (np. `http://192.168.1.60`) i wybierz format `Tasmota`.
+4. Kliknij **Testuj** — powinno odpowiedzieć.
+
+W `server/adapters.ts` są kody Samsunga dla `power`, `vol+`, `vol-`, `mute`. **Kody nawigacji nie są zgadywane** — dla swojego modelu przechwyć je pilotem i dopisz do mapy. Aplikacja w trybie live powie wprost, którego kodu brakuje.
+
+### 2. Głośnik Bluetooth
+
+```bash
+sudo apt install bluez pulseaudio-utils
+bluetoothctl scan on       # znajdź MAC głośnika
+```
+
+MAC, nazwę i adapter (`hci0`) wpisz w Ustawieniach, włącz integrację i sprawdź **Testuj**. Parowanie i rozłączanie w panelu głośnika wołają `bluetoothctl`; suwak głośności ustawia `pactl`.
+
+### 3. Home Assistant (opcjonalnie)
+
+1. Home Assistant → profil → **Long-lived access token**.
+2. Wklej URL (`http://homeassistant.local:8123`) i token w Ustawieniach.
+3. **Testuj** — dostaniesz informację, czy HA przyjął token.
+
+Hub pozwala dodać setki urządzeń (Zigbee, Wi-Fi, chmury) bez pisania integracji. W aplikacji jest przycisk **Jak to działa**, który wyjaśnia to po ludzku.
+
+### 4. Komputer / telefon
+
+Docelowo mały agent wystawiający lokalne HTTP: głośność, uruchamianie aplikacji, bateria, DND, Wake-on-LAN. Do tego czasu te urządzenia są symulowane.
+
+## Architektura
+
+```
+przeglądarka (React + Vite + PWA)
+        │  REST /api/*          WebSocket /ws
+        ▼
+serwer Node (Express + ws)
+  ├── state.ts      stan pokoju, model poboru prądu, energia,
+  │                 automatyzacje, dziennik zdarzeń, zapis do data/
+  ├── seed.ts       domyślny pokój, sceny, reguły
+  ├── adapters.ts   IR (HTTP), Bluetooth (bluetoothctl), Home Assistant (REST)
+  └── config.ts     konfiguracja + maskowanie sekretów
+```
+
+Serwer trzyma stan w pamięci i zapisuje go co 10 s do `data/state.json`. Cała komunikacja z urządzeniami przechodzi przez jedno miejsce (`applyPatch` / `command`), więc dodanie adaptera nie rusza interfejsu.
+
+### API
+
+| Metoda | Ścieżka | Opis |
+| --- | --- | --- |
+| GET | `/api/snapshot` | Pełny stan: urządzenia, sceny, automatyzacje, energia |
+| PATCH | `/api/devices/:id` | Zmiana stanu (jasność, głośność, temperatura…) z walidacją |
+| POST | `/api/devices/:id/command` | `toggle`, `play`, `next`, `ir-key`, `wake`, `bt-connect`… |
+| POST | `/api/scenes/:id/apply` | Wykonanie sceny |
+| PATCH | `/api/automations/:id` | Włącz/wyłącz regułę |
+| POST | `/api/automations/:id/run` | Uruchomienie ręczne |
+| GET/PUT | `/api/config` | Konfiguracja (tokeny nigdy nie wracają do klienta) |
+| POST | `/api/config/test` | Test mostka IR / BT / HA / MQTT |
+| POST | `/api/bluetooth/scan` | Lista urządzeń BT |
+| POST | `/api/system/reset` | Powrót do pokoju demo |
+
+## Struktura
+
+```
+server/            backend: stan, adaptery, API, WebSocket
+shared/types.ts    kontrakt danych serwer ↔ klient
+src/
+  App.tsx          powłoka: nawigacja, motyw, skróty, połączenie live
+  components/      kafle, panel urządzenia, polecenia, UI
+  views/           Sceny, Automatyzacje, Energia, Ustawienia
+  lib/             API, store (zustand), i18n, formatowanie
+  index.css        design tokens + cały layout (bez frameworka CSS)
+public/            manifest PWA, service worker, ikony
+data/              stan i konfiguracja runtime (poza gitem!)
+```
+
+## Bezpieczeństwo
+
+- `data/` jest w `.gitignore` — **tokeny Home Assistanta i hasła MQTT nie trafiają do repozytorium**.
+- API nie ma autoryzacji, bo jest przeznaczone do sieci lokalnej. **Nie wystawiaj portu 8787 na internet** — jeśli potrzebujesz dostępu z zewnątrz, postaw VPN (WireGuard/Tailscale).
+- Konfiguracja jest maskowana przy odczycie: klient widzi tylko `hasToken` / `hasPassword`.
+
+## Pomysły na dalej
+
+- Agent MyPilot (Rust/Go) dla Windows/macOS/Linux + companion app na Androida.
+- Kreator automatyzacji (warunki, harmonogramy, obecność).
+- Integracja MQTT i auto-discovery Tasmota.
+- Sceny uczące się z historii („tak zwykle robisz o 22:00”).
+- Wsparcie dla żarówek Hue i czujników Zigbee przez Home Assistant.
