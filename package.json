@@ -12,7 +12,8 @@
     "start": "NODE_ENV=production tsx server/index.ts",
     "typecheck": "tsc --noEmit",
     "icons": "node scripts/make-icons.mjs",
-    "smoke": "tsx scripts/smoke.tsx"
+    "smoke": "tsx scripts/smoke.tsx",
+    "agent": "node agent/index.mjs"
   },
   "dependencies": {
     "express": "^5.1.0",
