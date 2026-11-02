@@ -12,6 +12,20 @@ const run = promisify(execFile);
 const platform = process.platform;
 const dryRun = process.env.MYPILOT_AGENT_DRY_RUN === '1';
 
+/**
+ * Na Windows wybieramy PowerShell 7 (pwsh), jeśli jest, inaczej wbudowany
+ * powershell.exe. Dzięki temu agent działa też na czystym systemie.
+ */
+const PS = await (async () => {
+  if (platform !== 'win32') return 'powershell';
+  try {
+    const { stdout } = await run('where', ['pwsh'], { timeout: 2500 });
+    return stdout.trim() ? 'pwsh' : 'powershell';
+  } catch {
+    return 'powershell';
+  }
+})();
+
 export const isDryRun = () => dryRun;
 
 async function sh(command, args, timeout = 4000) {
@@ -35,9 +49,9 @@ let audioTools = null;
 export async function detectAudioTools() {
   if (audioTools) return audioTools;
   if (platform === 'darwin') {
-    audioTools = { exact: true, backend: 'osascript' };
+    audioTools = { exact: true, canSet: true, backend: 'osascript' };
   } else if (platform === 'win32') {
-    const module = await sh('powershell', [
+    const module = await sh(PS, [
       '-NoProfile',
       '-Command',
       'if (Get-Module -ListAvailable AudioDeviceCmdlets) { "yes" }',
@@ -45,6 +59,7 @@ export async function detectAudioTools() {
     const nircmd = await has('nircmd');
     audioTools = {
       exact: Boolean(module),
+      canSet: Boolean(module || nircmd),
       backend: module ? 'AudioDeviceCmdlets' : nircmd ? 'nircmd' : 'keys',
     };
   } else {
@@ -52,6 +67,7 @@ export async function detectAudioTools() {
     const amixer = await has('amixer');
     audioTools = {
       exact: Boolean(pactl || amixer),
+      canSet: Boolean(pactl || amixer),
       backend: pactl ? 'pactl' : amixer ? 'amixer' : 'none',
     };
   }
@@ -67,7 +83,7 @@ export async function getVolume() {
 
   if (platform === 'win32') {
     if (audioTools?.backend === 'AudioDeviceCmdlets') {
-      const out = await sh('powershell', ['-NoProfile', '-Command', '(Get-AudioDevice -PlaybackVolume).Volume']);
+      const out = await sh(PS, ['-NoProfile', '-Command', '(Get-AudioDevice -PlaybackVolume).Volume']);
       const value = out && Number.parseFloat(out.replace(',', '.'));
       return Number.isFinite(value) ? Math.round(value) : null;
     }
@@ -98,7 +114,7 @@ export async function setVolume(level) {
 
   if (platform === 'win32') {
     if (audioTools?.backend === 'AudioDeviceCmdlets') {
-      const out = await sh('powershell', ['-NoProfile', '-Command', `Set-AudioDevice -PlaybackVolume ${value}`]);
+      const out = await sh(PS, ['-NoProfile', '-Command', `Set-AudioDevice -PlaybackVolume ${value}`]);
       return out === null ? { ok: false, error: 'Set-AudioDevice nie powiodło się' } : { ok: true };
     }
     if (audioTools?.backend === 'nircmd') {
@@ -144,12 +160,12 @@ export async function toggleMute(force) {
             ? 'Set-AudioDevice -PlaybackMute $true'
             : 'Set-AudioDevice -PlaybackMute $false'
           : 'Set-AudioDevice -PlaybackMuteToggle';
-      return (await sh('powershell', ['-NoProfile', '-Command', cmd])) === null
+      return (await sh(PS, ['-NoProfile', '-Command', cmd])) === null
         ? { ok: false, error: 'Set-AudioDevice nie powiodło się' }
         : { ok: true };
     }
     const script = '(New-Object -ComObject WScript.Shell).SendKeys([char]173)';
-    return (await sh('powershell', ['-NoProfile', '-Command', script])) === null
+    return (await sh(PS, ['-NoProfile', '-Command', script])) === null
       ? { ok: false, error: 'Brak możliwości wyciszenia (zainstaluj AudioDeviceCmdlets)' }
       : { ok: true };
   }
@@ -189,7 +205,7 @@ export async function media(action) {
 
   if (platform === 'win32') {
     const code = action === 'next' ? 176 : action === 'prev' ? 177 : 179;
-    const out = await sh('powershell', [
+    const out = await sh(PS, [
       '-NoProfile',
       '-Command',
       `(New-Object -ComObject WScript.Shell).SendKeys([char]${code})`,
@@ -272,7 +288,7 @@ export async function launchApp(name) {
       : { ok: true };
   }
   if (platform === 'win32') {
-    const out = await sh('powershell', ['-NoProfile', '-Command', `Start-Process "${app}"`]);
+    const out = await sh(PS, ['-NoProfile', '-Command', `Start-Process "${app}"`]);
     return out === null ? { ok: false, error: `Nie udało się uruchomić „${app}”.` } : { ok: true };
   }
   const viaDesktop = await sh('gtk-launch', [app.toLowerCase().replace(/\s+/g, '-')]);
@@ -316,7 +332,7 @@ async function battery() {
   }
 
   if (platform === 'win32') {
-    const out = await sh('powershell', [
+    const out = await sh(PS, [
       '-NoProfile',
       '-Command',
       'Get-CimInstance Win32_Battery | Select-Object -First 1 EstimatedChargeRemaining,BatteryStatus | ConvertTo-Json -Compress',
@@ -335,7 +351,7 @@ async function battery() {
 
 async function cpuPercent() {
   if (platform === 'win32') {
-    const out = await sh('powershell', [
+    const out = await sh(PS, [
       '-NoProfile',
       '-Command',
       '(Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average',
@@ -355,7 +371,7 @@ async function temperature() {
     return Number.isFinite(value) ? Math.round(value / 100) / 10 : null;
   }
   if (platform === 'win32') {
-    const out = await sh('powershell', [
+    const out = await sh(PS, [
       '-NoProfile',
       '-Command',
       '(Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature).CurrentTemperature',
@@ -381,7 +397,7 @@ async function activeApp() {
     );
   }
   if (platform === 'win32') {
-    const out = await sh('powershell', [
+    const out = await sh(PS, [
       '-NoProfile',
       '-Command',
       'Get-Process | Where-Object { $_.MainWindowTitle } | Select-Object -First 1 -ExpandProperty ProcessName',
@@ -406,7 +422,7 @@ export async function getState() {
 
   return {
     hostname: os.hostname(),
-    platform: `${os.type()} ${os.release()}`,
+    platform: `${os.type()} ${os.release()}`.trim(),
     arch: os.arch(),
     cpu: os.cpus()[0]?.model?.trim() ?? 'unknown',
     cpuCount: os.cpus().length,

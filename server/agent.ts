@@ -78,14 +78,26 @@ export async function probeAgent(config: StoredConfig): Promise<AgentProbe> {
       };
     }
     const payload = (await response.json()) as { state: AgentSnapshot };
+    const state = payload.state;
+    const isWindows = /win/i.test(state?.platform ?? '');
+    const noVolume = state?.volume == null;
+    const hint = isWindows && noVolume
+      ? {
+          pl: ' Uwaga: agent nie widzi głośności — na Windows zainstaluj moduł AudioDeviceCmdlets (Install-Module AudioDeviceCmdlets).',
+          en: ' Note: the agent cannot read volume — on Windows install AudioDeviceCmdlets (Install-Module AudioDeviceCmdlets).',
+        }
+      : {
+          pl: state?.activeApp ? ` Aktywna aplikacja: ${state.activeApp}.` : '',
+          en: state?.activeApp ? ` Active app: ${state.activeApp}.` : '',
+        };
     return {
       ok: true,
       latencyMs: Date.now() - started,
-      state: payload.state,
-      hostname: payload.state?.hostname,
+      state,
+      hostname: state?.hostname,
       message: {
-        pl: `Agent działa na „${payload.state?.hostname ?? 'komputerze'}” (${payload.state?.platform ?? ''}).`,
-        en: `Agent is running on “${payload.state?.hostname ?? 'computer'}” (${payload.state?.platform ?? ''}).`,
+        pl: `Agent działa na „${state?.hostname ?? 'komputerze'}” (${state?.platform ?? ''}).${hint.pl}`,
+        en: `Agent is running on “${state?.hostname ?? 'computer'}” (${state?.platform ?? ''}).${hint.en}`,
       },
     };
   } catch (error) {

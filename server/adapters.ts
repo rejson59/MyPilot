@@ -223,16 +223,22 @@ export async function testTarget(
       return { target, ok: false, message: { pl: 'Podaj adres mostka IR.', en: 'Enter the IR bridge address.' } };
     }
     try {
-      const res = await fetch(`${config.irBridge.url.replace(/\/$/, '')}/cm?cmnd=Status`, {
-        signal: AbortSignal.timeout(4000),
-      });
+      const probeUrl =
+        config.irBridge.format === 'tasmota'
+          ? `${config.irBridge.url.replace(/\/$/, '')}/cm?cmnd=Status`
+          : config.irBridge.url.replace(/\/$/, '');
+      const res = await fetch(probeUrl, { signal: AbortSignal.timeout(4000) });
       return {
         target,
-        ok: res.ok,
+        ok: res.status < 500,
         latencyMs: Date.now() - started,
-        message: res.ok
-          ? { pl: 'Mostek IR odpowiada.', en: 'IR bridge responded.' }
-          : { pl: `Mostek odpowiedział HTTP ${res.status}.`, en: `Bridge answered HTTP ${res.status}.` },
+        message:
+          res.status < 500
+            ? {
+                pl: `Mostek IR odpowiada (HTTP ${res.status}, format ${config.irBridge.format}).`,
+                en: `IR bridge responded (HTTP ${res.status}, ${config.irBridge.format} format).`,
+              }
+            : { pl: `Mostek odpowiedział HTTP ${res.status}.`, en: `Bridge answered HTTP ${res.status}.` },
       };
     } catch (error) {
       return {

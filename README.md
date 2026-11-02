@@ -29,6 +29,8 @@ npm run dev
 - Interfejs: **http://localhost:5173**
 - API + WebSocket: `http://127.0.0.1:8787` (Vite proxuje `/api` i `/ws`)
 
+**Windows — dwa kliknięcia:** uruchom `start-windows.bat`. Skrypt sprawdzi Node.js, zainstaluje zależności, otworzy serwer i agenta w osobnych oknach i włączy aplikację w przeglądarce. Token agenta skopiujesz z jego okna konsoli.
+
 Produkcja:
 
 ```bash

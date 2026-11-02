@@ -42,12 +42,32 @@ sudo apt install pulseaudio-utils playerctl      # Debian/Ubuntu
 sudo dnf install pulseaudio-utils playerctl      # Fedora
 ```
 
-Windows — dokładna głośność:
+### Windows — krok po kroku
+
+1. Zainstaluj Node.js LTS z [nodejs.org](https://nodejs.org).
+2. Dokładna głośność (opcjonalnie, ale polecane):
 
 ```powershell
-Install-Module AudioDeviceCmdlets -Scope CurrentUser
-# albo pobierz nircmd i dodaj do PATH
+Install-Module AudioDeviceCmdlets -Scope CurrentUser -Force
 ```
+
+Zamiast modułu może być `nircmd` w PATH. Bez obu agent nadal obsłuży multimedia, aplikacje i uśpienie, ale suwak głośności zwróci błąd.
+
+3. Uruchom agenta:
+
+```bat
+npm run agent
+```
+
+albo dwa razy kliknij `start-windows.bat` w katalogu głównym repo — uruchomi też serwer MyPilot.
+
+4. Jeśli MyPilot działa na innym urządzeniu w sieci, zezwól na port 8790:
+
+```powershell
+New-NetFirewallRule -DisplayName "MyPilot Agent" -Direction Inbound -LocalPort 8790 -Protocol TCP -Action Allow
+```
+
+Agent używa `pwsh`, jeśli jest zainstalowany, a w przeciwnym razie wbudowanego `powershell.exe`.
 
 ## Konfiguracja (zmienne środowiskowe)
 
