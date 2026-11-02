@@ -108,7 +108,7 @@ app.put('/api/config', (req, res) => {
 
 app.post('/api/config/test', async (req, res) => {
   const target = req.body?.target as SetupTestResult['target'];
-  if (!['ir', 'bluetooth', 'homeassistant', 'mqtt', 'agent'].includes(target)) {
+  if (!['ir', 'bluetooth', 'homeassistant', 'mqtt', 'agent', 'adb'].includes(target)) {
     res.status(400).json({ ok: false, error: 'Nieznany cel testu.' });
     return;
   }
@@ -118,6 +118,8 @@ app.post('/api/config/test', async (req, res) => {
   if (target === 'mqtt' && req.body?.url) room.config.mqtt.url = String(req.body.url);
   if (target === 'agent' && req.body?.url) room.config.agent.url = String(req.body.url);
   if (target === 'agent' && req.body?.token) room.config.agent.token = String(req.body.token);
+  if (target === 'adb' && req.body?.adbPath) room.config.phone.adbPath = String(req.body.adbPath);
+  if (target === 'adb' && req.body?.serial) room.config.phone.serial = String(req.body.serial);
   const result = await testTarget(target, room.config);
   res.json(result);
 });

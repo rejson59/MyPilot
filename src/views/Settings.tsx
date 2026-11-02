@@ -36,6 +36,9 @@ interface FormState {
   agentEnabled: boolean;
   agentUrl: string;
   agentToken: string;
+  phoneEnabled: boolean;
+  phoneAdb: string;
+  phoneSerial: string;
   haEnabled: boolean;
   haUrl: string;
   haToken: string;
@@ -70,6 +73,9 @@ export function SettingsView() {
     agentEnabled: config.agent.enabled,
     agentUrl: config.agent.url,
     agentToken: '',
+    phoneEnabled: config.phone.enabled,
+    phoneAdb: config.phone.adbPath,
+    phoneSerial: config.phone.serial,
     haEnabled: config.homeAssistant.enabled,
     haUrl: config.homeAssistant.url,
     haToken: '',
@@ -435,6 +441,78 @@ export function SettingsView() {
               </div>
               <div className="note">{t('settings.agentHow')}</div>
               {result('agent')}
+            </div>
+
+            {/* Telefon (ADB) */}
+            <div style={{ padding: '16px 0', borderBottom: '1px solid var(--line)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                <span className="setCard__icon" style={{ width: 30, height: 30, borderRadius: 9 }}>
+                  <Smartphone size={15} />
+                </span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 600 }}>{t('settings.phone')}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{t('settings.phoneDesc')}</div>
+                </div>
+                {status(config.phone.enabled)}
+              </div>
+              <div className="formGrid">
+                <div className="formRow">
+                  <label htmlFor="phoneAdb">{t('settings.phoneAdb')}</label>
+                  <input
+                    id="phoneAdb"
+                    className="input"
+                    value={form.phoneAdb}
+                    onChange={set('phoneAdb')}
+                    placeholder="adb"
+                  />
+                </div>
+                <div className="formRow">
+                  <label htmlFor="phoneSerial">{t('settings.phoneSerial')}</label>
+                  <input
+                    id="phoneSerial"
+                    className="input"
+                    value={form.phoneSerial}
+                    onChange={set('phoneSerial')}
+                    placeholder={t('settings.phoneSerialHint')}
+                  />
+                </div>
+              </div>
+              <div className="setFooter">
+                <button
+                  type="button"
+                  className="btn btn--sm"
+                  onClick={() => test('adb', { adbPath: form.phoneAdb, serial: form.phoneSerial })}
+                  disabled={testing === 'adb'}
+                >
+                  {testing === 'adb' ? t('common.testing') : t('common.test')}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--primary btn--sm"
+                  onClick={() =>
+                    save('phone', {
+                      phone: {
+                        enabled: form.phoneEnabled,
+                        adbPath: form.phoneAdb,
+                        serial: form.phoneSerial,
+                      },
+                    })
+                  }
+                  disabled={saving === 'phone'}
+                >
+                  {saving === 'phone' ? t('common.saving') : t('common.save')}
+                </button>
+                <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-2)' }}>
+                  {t('common.enabled')}
+                  <Switch
+                    checked={form.phoneEnabled}
+                    onChange={(value) => setForm((current) => ({ ...current, phoneEnabled: value }))}
+                    label={t('settings.phone')}
+                  />
+                </span>
+              </div>
+              <div className="note">{t('settings.phoneHow')}</div>
+              {result('adb')}
             </div>
 
             {/* Home Assistant */}

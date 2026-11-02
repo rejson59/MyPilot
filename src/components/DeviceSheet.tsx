@@ -745,7 +745,8 @@ function PhoneControls({ device }: { device: Device }) {
   const state = device.state as Record<string, any>;
   const apps = (device.meta?.apps as string[] | undefined) ?? [];
   const patch = (payload: Record<string, unknown>) => api.patchDevice(device.id, payload).catch(() => undefined);
-  const command = (name: string) => api.command(device.id, name).catch((error) => toast((error as Error).message, 'error'));
+  const command = (name: string, payload?: Record<string, unknown>) =>
+    api.command(device.id, name, payload).catch((error) => toast((error as Error).message, 'error'));
 
   return (
     <>
@@ -768,13 +769,13 @@ function PhoneControls({ device }: { device: Device }) {
               <span style={{ fontSize: 12.5, color: 'var(--text-2)' }}>
                 <BellRing size={13} style={{ display: 'inline', verticalAlign: -2 }} /> {t('sheet.dnd')}
               </span>
-              <Switch checked={Boolean(state.dnd)} accent="#10b981" onChange={(value) => patch({ dnd: value })} label={t('sheet.dnd')} />
+              <Switch checked={Boolean(state.dnd)} accent="#10b981" onChange={(value) => command('dnd', { enabled: value })} label={t('sheet.dnd')} />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span style={{ fontSize: 12.5, color: 'var(--text-2)' }}>
                 <Lightbulb size={13} style={{ display: 'inline', verticalAlign: -2 }} /> {t('sheet.screen')}
               </span>
-              <Switch checked={Boolean(state.screenOn)} accent="#10b981" onChange={(value) => patch({ screenOn: value })} label={t('sheet.screen')} />
+              <Switch checked={Boolean(state.screenOn)} accent="#10b981" onChange={(value) => command('screen', { on: value })} label={t('sheet.screen')} />
             </div>
           </div>
         </div>
@@ -785,7 +786,7 @@ function PhoneControls({ device }: { device: Device }) {
           <span className="block__label">{t('sheet.volume')}</span>
           <span className="block__value">{Math.round(state.mediaVolume ?? 0)}%</span>
         </div>
-        <Slider value={Number(state.mediaVolume ?? 0)} onChange={(value) => patch({ mediaVolume: value })} label={t('sheet.volume')} accent="#10b981" />
+        <Slider value={Number(state.mediaVolume ?? 0)} onChange={(value) => command('media-volume', { value })} label={t('sheet.volume')} accent="#10b981" />
       </div>
 
       <div className="block">
@@ -808,9 +809,9 @@ function PhoneControls({ device }: { device: Device }) {
         </div>
         <div className="effectRow">
           {apps.map((app) => (
-            <span key={app} className="chipMini">
+            <button key={app} type="button" className="chipMini" onClick={() => command('launch-app', { app })}>
               {app}
-            </span>
+            </button>
           ))}
         </div>
         <div className="note">{t('sheet.batteryNote')}</div>

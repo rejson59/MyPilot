@@ -23,6 +23,15 @@ import { customDevicesFile, loadConfig, saveConfig, stateFile, toPublicConfig, t
 import { seedAutomations, seedDevices, seedScenes } from './seed.js';
 import { btConnect, btDisconnect, sendIr, sendIrRaw, setSystemVolume } from './adapters.js';
 import { agentCommand, readAgentState, wakeOnLan } from './agent.js';
+import {
+  launchOnPhone,
+  mediaKey,
+  readPhoneState,
+  setDnd,
+  setMediaVolume,
+  setScreen,
+  vibrate,
+} from './adb.js';
 
 const VERSION = '0.1.0';
 const ENERGY_SEED = [1.24, 1.02, 1.61, 0.88, 1.35, 1.78, 1.11];
@@ -198,6 +207,10 @@ export class Room {
   private agentFailures = 0;
   private lastAgentPoll = 0;
   private agentPolling = false;
+  private phoneFailures = 0;
+  private lastPhonePoll = 0;
+  private phonePolling = false;
+  private volumeTimer: NodeJS.Timeout | null = null;
 
   constructor() {
     this.config = loadConfig();
@@ -445,6 +458,45 @@ export class Room {
         });
       }
 
+      case 'media-volume': {
+        const value = clamp(Number(payload.value ?? 0), 0, 100);
+        this.applyPatch(deviceId, { mediaVolume: value });
+        if (live && this.config.phone.enabled && device.kind === 'phone') {
+          if (this.volumeTimer) clearTimeout(this.volumeTimer);
+          this.volumeTimer = setTimeout(() => {
+            void setMediaVolume(this.config, value);
+          }, 350);
+          return note(true, { pl: `Głośność telefonu: ${value}%.`, en: `Phone volume: ${value}%.` });
+        }
+        return note(true, { pl: `Głośność telefonu: ${value}%.`, en: `Phone volume: ${value}%.` });
+      }
+
+      case 'screen': {
+        const on = Boolean(payload.on);
+        this.applyPatch(deviceId, { screenOn: on });
+        if (live && this.config.phone.enabled && device.kind === 'phone') {
+          const result = await setScreen(this.config, on);
+          if (!result.ok) return note(false, result.message);
+        }
+        return note(true, {
+          pl: on ? 'Ekran włączony.' : 'Ekran wyłączony.',
+          en: on ? 'Screen on.' : 'Screen off.',
+        });
+      }
+
+      case 'dnd': {
+        const on = Boolean(payload.enabled);
+        this.applyPatch(deviceId, { dnd: on });
+        if (live && this.config.phone.enabled && device.kind === 'phone') {
+          const result = await setDnd(this.config, on);
+          if (!result.ok) return note(false, result.message);
+        }
+        return note(true, {
+          pl: on ? 'Nie przeszkadzać: włączone.' : 'Nie przeszkadzać: wyłączone.',
+          en: on ? 'Do Not Disturb: on.' : 'Do Not Disturb: off.',
+        });
+      }
+
       case 'volume': {
         const value = clamp(Number(payload.value ?? 0), 0, 100);
         this.applyPatch(deviceId, { volume: value });
@@ -585,6 +637,10 @@ export class Room {
 
       case 'launch-app': {
         const app = String(payload.app ?? '');
+        if (live && this.config.phone.enabled && device.kind === 'phone') {
+          const result = await launchOnPhone(this.config, app);
+          if (!result.ok) return note(false, result.message);
+        }
         if (live && this.config.agent.enabled && (device.kind === 'pc' || device.kind === 'laptop')) {
           const result = await agentCommand(this.config, '/apps/launch', { name: app });
           if (!result.ok) return note(false, result.message);
@@ -607,6 +663,11 @@ export class Room {
 
       case 'media': {
         const action = String(payload.action ?? 'play-pause');
+        if (live && this.config.phone.enabled && device.kind === 'phone') {
+          const result = await mediaKey(this.config, action as 'play-pause' | 'next' | 'prev');
+          if (!result.ok) return note(false, result.message);
+          return note(true, result.message);
+        }
         if (!['play-pause', 'next', 'prev'].includes(action)) {
           return note(false, { pl: 'Nieznana akcja mediów.', en: 'Unknown media action.' });
         }
@@ -622,12 +683,26 @@ export class Room {
       }
 
       case 'ring': {
+        if (live && this.config.phone.enabled && device.kind === 'phone') {
+          const result = await vibrate(this.config);
+          if (!result.ok) return note(false, result.message);
+          return note(true, result.message);
+        }
         return note(true, { pl: `Dzwonię na ${device.name.pl} (symulacja).`, en: `Ringing ${device.name.en} (simulated).` });
       }
 
       case 'find': {
         this.applyPatch(deviceId, { screenOn: true });
-        return note(true, { pl: 'Tablet podświetlony.', en: 'Tablet screen lit.' });
+        if (live && this.config.phone.enabled && device.kind === 'phone') {
+          const screen = await setScreen(this.config, true);
+          if (!screen.ok) return note(false, screen.message);
+          const result = await vibrate(this.config);
+          return note(true, {
+            pl: result.ok ? 'Telefon podświetlony i wibruje.' : 'Ekran telefonu włączony.',
+            en: result.ok ? 'Phone screen on and vibrating.' : 'Phone screen on.',
+          });
+        }
+        return note(true, { pl: 'Telefon podświetlony.', en: 'Phone screen lit.' });
       }
 
       case 'bt-scan': {
@@ -757,13 +832,17 @@ export class Room {
       homeAssistant: { ...this.config.homeAssistant, ...(patch.homeAssistant ?? {}) },
       mqtt: { ...this.config.mqtt, ...(patch.mqtt ?? {}) },
       agent: { ...this.config.agent, ...(patch.agent ?? {}) },
+      phone: { ...this.config.phone, ...(patch.phone ?? {}) },
     };
     this.config.homeAssistant.hasToken = Boolean(this.config.homeAssistant.token);
     this.config.mqtt.hasPassword = Boolean(this.config.mqtt.password);
     this.config.agent.hasToken = Boolean(this.config.agent.token);
     if (this.config.mode !== 'live') {
       this.agentFailures = 0;
+      this.phoneFailures = 0;
       for (const device of this.computers()) device.online = true;
+      const phone = this.devices.find((device) => device.kind === 'phone');
+      if (phone) phone.online = true;
     }
     saveConfig(this.config);
     this.addEvent('system', {
@@ -911,6 +990,11 @@ export class Room {
       void this.pollAgent();
     }
 
+    if (this.config.mode === 'live' && this.config.phone.enabled && Date.now() - this.lastPhonePoll > 8000) {
+      this.lastPhonePoll = Date.now();
+      void this.pollPhone();
+    }
+
     this.broadcastSnapshot();
   }
 
@@ -947,6 +1031,39 @@ export class Room {
       }
     } finally {
       this.agentPolling = false;
+    }
+  }
+
+  /** Odpytywanie telefonu przez ADB (tryb live). */
+  private async pollPhone() {
+    if (this.phonePolling) return;
+    this.phonePolling = true;
+    try {
+      const state = await readPhoneState(this.config);
+      const phone = this.devices.find((device) => device.kind === 'phone');
+      if (!phone) return;
+      if (state) {
+        this.phoneFailures = 0;
+        phone.online = true;
+        const local = phone.state as Record<string, any>;
+        if (state.battery != null) local.battery = state.battery;
+        if (state.charging != null) local.charging = state.charging;
+        if (state.screenOn != null) local.screenOn = state.screenOn;
+        if (state.dnd != null) local.dnd = state.dnd;
+        if (state.mediaVolume != null) local.mediaVolume = state.mediaVolume;
+        phone.powerW = computePower(phone);
+      } else {
+        this.phoneFailures++;
+        if (this.phoneFailures === 2) {
+          phone.online = false;
+          this.addEvent('warning', {
+            pl: 'Telefon nie odpowiada po ADB — sprawdź kabel i debugowanie USB.',
+            en: 'The phone is not answering over ADB — check the cable and USB debugging.',
+          });
+        }
+      }
+    } finally {
+      this.phonePolling = false;
     }
   }
 
@@ -1003,6 +1120,16 @@ export class Room {
               pl: 'Uruchom „npm run agent” na komputerze, żeby sterować nim naprawdę.',
               en: 'Run “npm run agent” on your computer to control it for real.',
             },
+      },
+      {
+        id: 'adb',
+        label: 'Telefon (ADB)',
+        transport: 'agent',
+        configured: Boolean(this.config.phone.enabled),
+        devices: 1,
+        note: this.config.phone.enabled
+          ? { pl: 'Telefon podłączony przez ADB: bateria, ekran, DND, multimedia.', en: 'Phone connected over ADB: battery, screen, DND, media.' }
+          : { pl: 'Podłącz telefon kablem USB i włącz debugowanie USB, żeby sterować nim naprawdę.', en: 'Connect the phone over USB and enable USB debugging to control it for real.' },
       },
       {
         id: 'homeassistant',

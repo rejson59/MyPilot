@@ -3,6 +3,7 @@ import { promisify } from 'node:util';
 import type { LocalizedText, SetupTestResult } from '../shared/types.js';
 import type { StoredConfig } from './config.js';
 import { probeAgent } from './agent.js';
+import { listAdbDevices } from './adb.js';
 
 const run = promisify(execFile);
 
@@ -310,6 +311,11 @@ export async function testTarget(
         },
       };
     }
+  }
+
+  if (target === 'adb') {
+    const probe = await listAdbDevices(config);
+    return { target, ok: probe.ok, message: probe.message, latencyMs: probe.latencyMs };
   }
 
   if (target === 'agent') {

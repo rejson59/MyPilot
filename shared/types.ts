@@ -145,6 +145,7 @@ export interface PublicConfig {
   homeAssistant: { enabled: boolean; url: string; hasToken: boolean };
   mqtt: { enabled: boolean; url: string; username: string; hasPassword: boolean };
   agent: { enabled: boolean; url: string; hasToken: boolean };
+  phone: { enabled: boolean; adbPath: string; serial: string };
 }
 
 export interface Ambient {
@@ -198,7 +199,7 @@ export interface BluetoothPeer {
 }
 
 export interface SetupTestResult {
-  target: 'ir' | 'bluetooth' | 'homeassistant' | 'mqtt' | 'agent';
+  target: 'ir' | 'bluetooth' | 'homeassistant' | 'mqtt' | 'agent' | 'adb';
   ok: boolean;
   message: LocalizedText;
   latencyMs?: number;

@@ -26,6 +26,7 @@ export const defaultConfig: StoredConfig = {
   homeAssistant: { enabled: false, url: 'http://homeassistant.local:8123', hasToken: false, token: '' },
   mqtt: { enabled: false, url: 'mqtt://192.168.1.10:1883', username: '', hasPassword: false, password: '' },
   agent: { enabled: false, url: 'http://127.0.0.1:8790', hasToken: false, token: '' },
+  phone: { enabled: false, adbPath: 'adb', serial: '' },
 };
 
 function ensureDir() {
@@ -45,6 +46,7 @@ export function loadConfig(): StoredConfig {
       homeAssistant: { ...defaultConfig.homeAssistant, ...(parsed.homeAssistant ?? {}) },
       mqtt: { ...defaultConfig.mqtt, ...(parsed.mqtt ?? {}) },
       agent: { ...defaultConfig.agent, ...(parsed.agent ?? {}) },
+      phone: { ...defaultConfig.phone, ...(parsed.phone ?? {}) },
     };
   } catch {
     return structuredClone(defaultConfig);
@@ -85,6 +87,11 @@ export function toPublicConfig(config: StoredConfig): PublicConfig {
       enabled: config.agent.enabled,
       url: config.agent.url,
       hasToken: Boolean(config.agent.token),
+    },
+    phone: {
+      enabled: config.phone.enabled,
+      adbPath: config.phone.adbPath,
+      serial: config.phone.serial,
     },
   };
 }

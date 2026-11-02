@@ -52,6 +52,7 @@ Przełącznik w **Ustawienia → Tryb pracy**. Tryb demo nie wymaga niczego i po
 | Home Assistant | **Test połączenia i wywołania usług** przez REST API z tokenem |
 | MQTT | Zapis konfiguracji i walidacja adresu; publikacja/subskrypcja to kolejny krok |
 | Agent MyPilot (PC / laptop) | **Działa** — `npm run agent`, głośność, multimedia, aplikacje, CPU, uśpienie; Wake-on-LAN z serwera |
+| Telefon (ADB) | **Działa** — bateria, ekran, Nie przeszkadzać, głośność multimediów, klawisze i uruchamianie aplikacji przez `adb` |
 
 Komputer ma już prawdziwego agenta. Telefon i tablet nadal są symulowane — aplikacja pokazuje docelowy interfejs i ma gotowe miejsce na companion appkę (ADB na Androidzie).
 
@@ -106,7 +107,22 @@ npm run agent        # albo: node agent/index.mjs
 
 Agent wypisze w konsoli adres i token. Wklej je w **Ustawienia → Agent MyPilot**, włącz integrację i kliknij **Testuj**. Od tej chwili (w trybie live) suwak głośności, multimedia, CPU i aplikacje na PC są prawdziwe, a „Obudź” wysyła magic packet Wake-on-LAN (wymaga MAC w urządzeniu i WoL w BIOSie).
 
-Obsługiwane systemy i wymagane narzędzia (Linux: `pactl`/`playerctl`, macOS: wbudowane, Windows: `AudioDeviceCmdlets` lub `nircmd`), autostart i diagnostyka — w **[agent/README.md](agent/README.md)**. Telefon i tablet pozostają symulowane do czasu companion appki.
+Obsługiwane systemy i wymagane narzędzia (Linux: `pactl`/`playerctl`, macOS: wbudowane, Windows: `AudioDeviceCmdlets` lub `nircmd`), autostart i diagnostyka — w **[agent/README.md](agent/README.md)**.
+
+### 5. Telefon (ADB, bez dodatkowej appki)
+
+Telefon nie potrzebuje żadnej aplikacji ani konta w chmurze — wystarczy debugowanie USB i `adb` z [platform-tools](https://developer.android.com/tools/releases/platform-tools).
+
+1. W telefonie: **Ustawienia → Informacje o telefonie → 7× „Wersja MIUI”**, potem **Opcje programisty → Debugowanie USB**.
+2. Podłącz kabel, na ekranie telefonu zaakceptuj **„Zezwól na debugowanie USB”**.
+3. W **Ustawienia → Telefon (ADB)** wpisz ścieżkę do `adb` (samo `adb`, jeśli jest w `PATH`) i kliknij **Testuj** — zobaczysz model telefonu.
+4. Włącz integrację i przełącz tryb na **live**.
+
+Co staje się prawdziwe: poziom baterii i ładowanie, ekran (włącz/wyłącz), **Nie przeszkadzać**, głośność multimediów, play/pause/next/prev, „Podświetl” (ekran + wibracja) oraz uruchamianie aplikacji po nazwie pakietu (`com.spotify.music`).
+
+**Bez kabla:** Opcje programisty → **Debugowanie bezprzewodowe** → „Parnuj urządzenie kodem”, a numer seryjny wpisz w ustawieniach. Uwaga: ekran musi być odblokowany, a po restarcie telefonu parowanie czasem trzeba powtórzyć.
+
+**Czego ADB nie zrobi:** nie wyśle podczerwieni. Redmi Note 14 Pro 5G **ma** nadajnik IR, ale Android nie udostępnia go innym appkom przez żadne publiczne API — pilot Xiaomi działa tylko w swoim interfejsie. Dlatego do sterowania taśmą Grundig z MyPilot nadal potrzebny jest mostek IR (patrz 1a).
 
 ## Architektura
 
@@ -137,7 +153,7 @@ Serwer trzyma stan w pamięci i zapisuje go co 10 s do `data/state.json`. Cała 
 | PATCH | `/api/automations/:id` | Włącz/wyłącz regułę |
 | POST | `/api/automations/:id/run` | Uruchomienie ręczne |
 | GET/PUT | `/api/config` | Konfiguracja (tokeny nigdy nie wracają do klienta) |
-| POST | `/api/config/test` | Test mostka IR / BT / HA / MQTT |
+| POST | `/api/config/test` | Test mostka IR / BT / HA / MQTT / agenta / ADB |
 | POST | `/api/bluetooth/scan` | Lista urządzeń BT |
 | POST | `/api/system/reset` | Powrót do pokoju demo |
 
@@ -166,7 +182,7 @@ data/              stan, konfiguracja i własne urządzenia (poza gitem!)
 
 ## Pomysły na dalej
 
-- Companionapp na Androida (obecnie telefon i tablet są symulowane).
+- Companion app na Androida (ADB już działa; appka dałaby podczerwień, powiadomienia i pracę bez kabla).
 - Kreator automatyzacji (warunki, harmonogramy, obecność).
 - Adapter RF 433 MHz (Broadlink RM4 Pro) dla taśm z pilotem radiowym.
 - Nauka kodów IR jednym kliknięciem (przechwycenie z mostka zamiast wklejania).
